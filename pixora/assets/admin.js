@@ -63,6 +63,6 @@
    }
    if (stopped) progress.textContent += ` — ${pixora.stopped}`;
   } catch (error) { log.textContent = `${error.message}\n${log.textContent}`; }
-  finally { buttons.forEach(item => { item.disabled = false; }); stop.disabled = true; }
+  finally { buttons.forEach(item => { item.disabled = item.dataset.pixoraUnavailable === 'true'; }); stop.disabled = true; }
  }));
 })();

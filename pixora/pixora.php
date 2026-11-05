@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: فشرده‌سازی تصاویر و تبدیل به WebP با حفظ فایل اصلی و امکان بازگردانی.
- * Version: 0.3.0
+ * Version: 0.3.1
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -211,8 +211,8 @@ final class Pixora {
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
   if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.3.0' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.3.0', true );
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.3.1' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.3.1', true );
   wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
@@ -223,7 +223,7 @@ final class Pixora {
   foreach ( $rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $before += $data['before']; $after += $data['after']; ++$count; $disk += $data['disk_freed'] ?? 0; } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۳.۰ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۳.۱ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">
@@ -231,13 +231,12 @@ final class Pixora {
     <div class="pixora-stat"><span>کاهش حجم تصاویر</span><strong><?php echo esc_html( size_format( max( 0, $before - $after ) ) ); ?></strong><small>در مجموع اندازه‌های تولیدشده</small></div>
     <div class="pixora-stat"><span>درصد کاهش حجم</span><strong><?php echo esc_html( number_format_i18n( $before ? 100 * ( $before - $after ) / $before : 0, 1 ) ); ?>٪</strong><small>نسبت به نسخه‌های اصلی</small></div>
    </section>
-   <section class="pixora-card pixora-storage"><h2>آزادسازی فضای دیسک</h2>
+   <section class="pixora-card pixora-storage"><h2>حذف اصل تصاویر و آزادسازی فضای دیسک</h2>
     <p>وب‌سرور شناسایی‌شده: <strong><?php echo esc_html( $host['name'] ); ?></strong> · فضای آزادشدهٔ ثبت‌شده: <strong><?php echo esc_html( size_format( $disk ) ); ?></strong></p>
     <p class="pixora-muted">ابتدا تصاویر را فشرده کنید. برای هر تصویر، هدایت آدرس‌های قدیمی به WebP تنظیم و با درخواست واقعی آزمایش می‌شود؛ در صورت شکست بررسی، فایل اصلی حفظ می‌شود. تشخیص نوع وب‌سرور به‌تنهایی تأیید سازگاری نیست.</p>
-    <?php if ( ! $host['supported'] ) : ?><p class="pixora-storage-warning">تنظیم خودکار روی این هاست فعال نیست. در Nginx یا هاست ناشناخته، تنظیم وب‌سرور باید توسط پشتیبانی هاست بررسی شود؛ اصل تصاویر حذف نمی‌شوند.</p><?php else : ?>
-    <label class="pixora-toggle"><input type="checkbox" id="pixora-cleanup-consent"><span>بکاپ مستقل دارم و می‌پذیرم با حذف اصل تصاویر، بازگردانی از داخل افزونه ممکن نیست.</span></label>
-    <p><button type="button" class="button" data-pixora="reclaim">بررسی آدرس‌ها و آزادسازی فضا</button></p>
-    <?php endif; ?>
+    <?php if ( ! $host['supported'] ) : ?><p id="pixora-storage-reason" class="pixora-storage-warning">دکمهٔ حذف غیرفعال است: هاست سازگار با هدایت خودکار آدرس‌ها تشخیص داده نشد. برای حفظ تصاویر سایت، در Nginx یا هاست ناشناخته اصل تصاویر حذف نمی‌شود. پشتیبانی هاست باید امکان استفاده از قواعد ‎.htaccess را بررسی کند.</p><?php endif; ?>
+    <label class="pixora-toggle"><input type="checkbox" id="pixora-cleanup-consent" <?php disabled( ! $host['supported'] ); ?>><span>بکاپ مستقل دارم و می‌پذیرم با حذف اصل تصاویر، بازگردانی از داخل افزونه ممکن نیست.</span></label>
+    <p><button type="button" class="button button-primary" data-pixora="reclaim" <?php if ( ! $host['supported'] ) : ?>disabled data-pixora-unavailable="true" aria-describedby="pixora-storage-reason"<?php endif; ?>>حذف اصل تصاویر پس از بررسی آدرس‌ها</button></p>
     <p class="pixora-muted">قواعد هدایت در پوشهٔ تصاویر باقی می‌مانند و به فعال بودن افزونه وابسته نیستند؛ هنگام مهاجرت یا بازیابی، فایل‌های مخفی ‎.htaccess را هم منتقل کنید. حذف یا تغییر این قواعد می‌تواند لینک‌های قدیمی را خراب کند. فایل اصلیِ بزرگ قبل از تغییر اندازهٔ وردپرس و فایل‌های فاقد نگاشت حفظ می‌شوند.</p>
    </section>
    <div class="pixora-layout">
