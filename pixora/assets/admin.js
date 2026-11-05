@@ -82,6 +82,7 @@
     const result = await request(body);
     if (result.done) { saveJob(mode, null); progress.textContent += ` — ${pixora.finished}`; break; }
     cursor = result.cursor;
+    if (result.scanning) { saveJob(mode, { cursor, processed, skipped, saved, freed, remaining }); continue; }
     if (result.status === 'processed') processed++; else skipped++;
     saved += result.saved;
     freed += result.freed || 0;
