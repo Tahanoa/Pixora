@@ -40,6 +40,52 @@ final class Pixora_Storage {
   }
   return new WP_Error( 'redirect', 'تعداد هدایت‌های آدرس بیش از حد مجاز است؛ اصل تصویر حفظ شد.' );
  }
+ public static function rule( $source, $target, $uploads ) {
+  $relative = substr( realpath( $target ), strlen( realpath( $uploads['basedir'] ) ) + 1 );
+  $destination = trailingslashit( $uploads['baseurl'] ) . str_replace( DIRECTORY_SEPARATOR, '/', $relative );
+  if ( preg_match( '/[\x00-\x20"\\\\%?#]/', $destination ) ) { return new WP_Error( 'url', 'آدرس بارگذاری برای هدایت خودکار مناسب نیست.' ); }
+  return 'RewriteRule "^' . preg_quote( basename( $source ), '/' ) . '$" "' . $destination . '" [R=307,L]';
+ }
+ public static function preflight( $file ) {
+  if ( ! self::host()['supported'] || ! Pixora::safe_file( $file ) ) { return new WP_Error( 'preflight', 'هاست برای آزادسازی خودکار تأیید نشد؛ برای جلوگیری از افزایش مصرف دیسک، تبدیل انجام نشد.' ); }
+  $uploads = wp_get_upload_dir(); $dir = dirname( $file );
+  $token = str_replace( '-', '', wp_generate_uuid4() );
+  $source = $dir . '/pixora-probe-' . $token . '.png';
+  $target = $dir . '/pixora-probe-' . $token . '.webp';
+  $created = array(); $handle = null; $previous = null;
+  try {
+   foreach ( array( $source => base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAADElEQVQImWM4oREAAAL8AUHoivCJAAAAAElFTkSuQmCC', true ), $target => base64_decode( 'UklGRjgAAABXRUJQVlA4ICwAAABwAQCdASoBAAEAAUAiJaACdAFAAAD+8DhBhhME6/+9gv/92C//3YL/WwAAAA==', true ) ) as $path => $body ) {
+    $probe = @fopen( $path, 'x' );
+    if ( ! $probe ) { return new WP_Error( 'preflight', 'ایجاد فایل بررسی هاست ممکن نشد؛ تبدیل انجام نشد.' ); }
+    $created[] = $path;
+    $written = fwrite( $probe, $body ); fclose( $probe );
+    if ( strlen( $body ) !== $written ) { return new WP_Error( 'preflight', 'نوشتن فایل بررسی هاست کامل نشد.' ); }
+   }
+   $path = $dir . '/.htaccess';
+   if ( is_link( $path ) ) { return new WP_Error( 'preflight', 'مسیر تنظیم هاست قابل تغییر نیست.' ); }
+   $handle = @fopen( $path, 'c+' );
+   if ( ! $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { return new WP_Error( 'preflight', 'فایل تنظیم هاست در دسترس نیست؛ تبدیل انجام نشد.' ); }
+   $previous = stream_get_contents( $handle );
+   if ( false === $previous || strlen( $previous ) > MB_IN_BYTES ) { $previous = null; return new WP_Error( 'preflight', 'خواندن تنظیم هاست ممکن نشد.' ); }
+   $rule = self::rule( $source, $target, $uploads );
+   if ( is_wp_error( $rule ) ) { return $rule; }
+   $content = "# BEGIN Pixora route check\n<IfModule mod_rewrite.c>\nRewriteEngine On\n" . $rule . "\n</IfModule>\n# END Pixora route check\n" . $previous;
+   if ( ! self::write( $handle, $content ) ) { return new WP_Error( 'preflight', 'ذخیرهٔ تنظیم آزمایشی هاست ممکن نشد.' ); }
+   $relative = substr( realpath( $source ), strlen( realpath( $uploads['basedir'] ) ) + 1 );
+   $url = trailingslashit( $uploads['baseurl'] ) . implode( '/', array_map( 'rawurlencode', explode( DIRECTORY_SEPARATOR, $relative ) ) );
+   $response = self::probe( add_query_arg( 'pixora_check', $token, $url ), $target );
+   if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) || 'image/webp' !== strtolower( trim( explode( ';', wp_remote_retrieve_header( $response, 'content-type' ) )[0] ) ) || ! hash_equals( hash_file( 'sha256', $target ), hash( 'sha256', wp_remote_retrieve_body( $response ) ) ) ) {
+    return new WP_Error( 'preflight', 'هاست یا کش، هدایت به WebP را تأیید نکرد؛ برای جلوگیری از افزایش فضای دیسک، نسخهٔ جدید ساخته نشد. کش تصاویر یا CDN را پاک کنید یا تنظیم هدایت را با پشتیبانی هاست بررسی کنید.' );
+   }
+   return true;
+  } finally {
+   if ( is_resource( $handle ) ) {
+    if ( null !== $previous ) { self::write( $handle, $previous ); }
+    flock( $handle, LOCK_UN ); fclose( $handle );
+   }
+   foreach ( $created as $path ) { if ( Pixora::safe_file( $path ) ) { wp_delete_file( $path ); } }
+  }
+ }
  public static function reclaim( $id ) {
   if ( ! self::host()['supported'] ) { return new WP_Error( 'host', 'هاست سازگار با تنظیم خودکار تشخیص داده نشد؛ فایل‌های اصلی حفظ شدند.' ); }
   $lock = Pixora::acquire_lock( $id );
@@ -65,14 +111,16 @@ final class Pixora_Storage {
      return new WP_Error( 'files', 'این فایل برای آزادسازی خودکار مناسب نیست؛ اصل تصویر حفظ شد. نام فایل نباید نویسهٔ کنترلی یا علامت‌های ویژهٔ قواعد هدایت داشته باشد.' );
     }
     if ( $source === $target || realpath( $source ) === realpath( $target ) ) { return new WP_Error( 'mapping', 'نگاشت نامعتبر است.' ); }
-    $rules[] = 'RewriteRule "^' . preg_quote( basename( $source ), '/' ) . '$" "' . basename( $target ) . '" [END]';
+    $rule = self::rule( $source, $target, $uploads );
+    if ( is_wp_error( $rule ) ) { return $rule; }
+    $rules[] = $rule;
     $relative = substr( realpath( $source ), strlen( realpath( $uploads['basedir'] ) ) + 1 );
     $checks[] = array( 'url' => trailingslashit( $uploads['baseurl'] ) . implode( '/', array_map( 'rawurlencode', explode( DIRECTORY_SEPARATOR, $relative ) ) ), 'file' => $target, 'source' => $source, 'hash' => hash_file( 'sha256', $source ) );
    }
    $rules[] = '</IfModule>';
    $path = $dir . '/.htaccess';
    if ( is_link( $path ) || ( file_exists( $path ) && ! is_writable( $path ) ) || ! is_writable( $dir ) ) { return new WP_Error( 'rules', 'هاست اجازهٔ تنظیم هدایت آدرس‌ها را نمی‌دهد؛ فایل اصلی حفظ شد.' ); }
-   $handle = fopen( $path, 'c+' );
+   $handle = @fopen( $path, 'c+' );
    if ( ! $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { return new WP_Error( 'rules', 'فایل تنظیم هدایت در دسترس نیست؛ دوباره تلاش کنید.' ); }
    $previous = stream_get_contents( $handle );
    if ( false === $previous || strlen( $previous ) > MB_IN_BYTES ) { $previous = null; return new WP_Error( 'rules', 'خواندن تنظیم هدایت ممکن نشد.' ); }
@@ -86,7 +134,7 @@ final class Pixora_Storage {
     Pixora_Diagnostics::stage( 'آزمایش آدرس ' . basename( $check['source'] ) );
     $response = self::probe( add_query_arg( 'pixora_check', wp_generate_uuid4(), $check['url'] ), $check['file'] );
     if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) || 'image/webp' !== strtolower( trim( explode( ';', wp_remote_retrieve_header( $response, 'content-type' ) )[0] ) ) || ! hash_equals( hash_file( 'sha256', $check['file'] ), hash( 'sha256', wp_remote_retrieve_body( $response ) ) ) ) {
-     $detail = is_wp_error( $response ) ? $response->get_error_message() : sprintf( 'HTTP %d؛ نوع محتوا: %s؛ عدم تطابق پاسخ با WebP', wp_remote_retrieve_response_code( $response ), wp_remote_retrieve_header( $response, 'content-type' ) );
+     $detail = is_wp_error( $response ) ? $response->get_error_message() : sprintf( 'HTTP %d؛ نوع محتوا: %s؛ محتوای فایل: %s', wp_remote_retrieve_response_code( $response ), wp_remote_retrieve_header( $response, 'content-type' ), hash_equals( hash_file( 'sha256', $check['file'] ), hash( 'sha256', wp_remote_retrieve_body( $response ) ) ) ? 'WebP درست است اما نوع محتوا یا وضعیت پاسخ نادرست است' : 'فایل WebP ارسال نشد؛ احتمال کش یا اعمال‌نشدن هدایت' );
      return new WP_Error( 'probe', 'آزمایش آدرس قدیمی موفق نبود؛ اصل تصاویر حفظ شدند. ' . $detail );
     }
    }

@@ -7,6 +7,8 @@ final class Pixora_Workflow {
  public static function combined( $id ) {
   $backup = get_post_meta( $id, Pixora::BACKUP, true );
   if ( ! $backup ) {
+   $check = Pixora_Storage::preflight( get_attached_file( $id ) );
+   if ( is_wp_error( $check ) ) { return $check; }
    $optimized = Pixora::optimize( $id );
    if ( is_wp_error( $optimized ) ) { return $optimized; }
   }
