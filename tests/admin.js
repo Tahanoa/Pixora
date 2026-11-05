@@ -37,6 +37,9 @@ const json = data => ({ status: 200, text: JSON.stringify({ success: true, data 
  await reclaim.listeners.click();
  assert.equal(cursors.length, before);
  assert.equal(elements['pixora-progress'].textContent, 'consent');
+ queue = [{ status: 500, text: JSON.stringify({ success: false, data: { message: 'attachment #7890: PHP image stage failed' } }) }];
+ await optimize.listeners.click();
+ assert.match(elements['pixora-log'].textContent, /#7890/);
  queue = [{ status: 403, text: '-1' }];
  await optimize.listeners.click();
  assert.match(elements['pixora-log'].textContent, /منقضی/);

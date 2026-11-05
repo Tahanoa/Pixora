@@ -39,8 +39,11 @@ function _wp_relative_upload_path($v) { return basename($v); }
 function wp_unique_filename($dir, $name) { $i = 0; $base = $name; while (file_exists($dir . '/' . $name)) $name = ++$i . '-' . $base; return $name; }
 function wp_delete_file($file) { unlink($file); }
 class FakeEditor {
+ function __construct() { $GLOBALS['editors_active'] = ($GLOBALS['editors_active'] ?? 0) + 1; $GLOBALS['editors_peak'] = max($GLOBALS['editors_peak'] ?? 0, $GLOBALS['editors_active']); }
+ function __destruct() { --$GLOBALS['editors_active']; }
  function set_quality($q) { return true; }
  function save($target, $mime) {
+  if (!empty($GLOBALS['throw_encode'])) throw new RuntimeException('Simulated encoder failure');
   if (!empty($GLOBALS['fail_encode'])) return new WP_Error('encoder');
   file_put_contents($target, str_repeat('w', !empty($GLOBALS['larger']) ? 2000 : 100));
   return array('path' => $target, 'mime-type' => $mime);
@@ -56,6 +59,7 @@ $GLOBALS['attachment'] = $original;
 try {
  $new = Pixora::optimize(1);
  check(!is_wp_error($new) && $GLOBALS['mime'] === 'image/webp', 'Optimization changes attachment MIME');
+ check($GLOBALS['editors_peak'] === 1, 'Only one decoded image editor is retained at a time');
  check($new['sizes']['thumbnail']['mime-type'] === 'image/webp', 'Thumbnail metadata uses WebP');
  check(file_exists($root . '/sample.jpg') && file_exists($root . '/sample-150.jpg'), 'Original URLs remain available');
  check($GLOBALS['meta'][Pixora::BACKUP]['before'] === 1500 && $GLOBALS['meta'][Pixora::BACKUP]['after'] === 200, 'Savings include all sizes');
@@ -102,6 +106,18 @@ try {
  $recovered = Pixora::acquire_lock(1);
  check(is_resource($recovered) && get_option('pixora_lock_1') === false, 'Stale legacy lock recovers automatically');
  Pixora::release_lock($recovered);
+ Pixora_Diagnostics::begin(1, 'optimize');
+ Pixora_Diagnostics::stage('test-stage');
+ $diagnostic = Pixora_Diagnostics::message(array('message' => 'Allowed memory size exhausted', 'file' => '/private/server/image.php', 'line' => 22));
+ Pixora_Diagnostics::finish();
+ check(strpos($diagnostic, '#1') !== false && strpos($diagnostic, 'test-stage') !== false && strpos($diagnostic, '/private') === false, 'Fatal diagnostics identify image and stage without exposing server paths');
+ Pixora::restore(1);
+ $GLOBALS['throw_encode'] = true;
+ check(is_wp_error(Pixora_Diagnostics::run(1, 'optimize')), 'Encoder exception becomes an actionable per-image error');
+ $GLOBALS['throw_encode'] = false;
+ $after_exception = Pixora::acquire_lock(1);
+ check(is_resource($after_exception), 'Encoder exception releases processing lock');
+ Pixora::release_lock($after_exception);
  check(Pixora::sanitize(array('quality' => 200))['quality'] === 100, 'Quality is bounded');
 } finally {
  foreach (array_merge(glob($root . '/*'), glob($root . '/.pixora-*.lock')) as $path) unlink($path);

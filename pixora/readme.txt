@@ -3,7 +3,7 @@ Contributors: tahanoa
 Tags: webp, images, optimization, media
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 0.3.2
+Stable tag: 0.3.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,6 +20,8 @@ Original files stay on disk. Existing hardcoded URLs are preserved and continue 
 3. Open Pixora in the main admin menu to configure quality and process or restore your library.
 
 == Changelog ==
+= 0.3.3 =
+Release decoded image memory between sizes, preflight available memory, catch encoder exceptions, and return best-effort fatal diagnostics with attachment ID and processing stage.
 = 0.3.2 =
 Process-owned file locks, stale legacy lock recovery, resumable batch progress, explicit operation labels, and detailed request errors.
 = 0.3.1 =

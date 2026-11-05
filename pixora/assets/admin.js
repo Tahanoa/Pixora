@@ -5,13 +5,17 @@
   const response = await fetch(pixora.url, { method: 'POST', credentials: 'same-origin', body });
   const text = await response.text();
   if (response.status === 403 || text.trim() === '-1') throw new Error('اعتبار درخواست یا دسترسی منقضی شده است؛ صفحه را تازه کنید و ادامه دهید.');
-  if (!response.ok) throw new Error(`خطای HTTP ${response.status}؛ احتمال محدودیت زمان یا منابع هاست. با همان دکمه پردازش را ادامه دهید.`);
+  if (!response.ok) {
+   let detail;
+   try { detail = JSON.parse(text)?.data?.message; } catch { /* Do not expose raw HTML error pages. */ }
+   throw new Error(detail || `خطای HTTP ${response.status}؛ هاست پاسخ خطای قابل‌خواندن نداد. error_log هاست را برای زمان این درخواست بررسی کنید.`);
+  }
   let result;
   try { result = JSON.parse(text); } catch {
    const reason = /memory size/i.test(text) ? 'حافظهٔ PHP کافی نیست.' : /execution time/i.test(text) ? 'زمان اجرای PHP تمام شده است.' : 'پاسخ معتبر JSON از هاست دریافت نشد؛ گزارش خطای PHP هاست را بررسی کنید.';
    throw new Error(reason);
   }
-  if (!result.success) throw new Error(result.data?.message || pixora.failed);
+  if (!result || !result.success) throw new Error(result?.data?.message || pixora.failed);
   return result.data;
  }
  const jobKey = mode => `pixora:${pixora.url}:${mode}`;

@@ -52,6 +52,7 @@ final class Pixora_Storage {
    // Do not trust software detection, a writable .htaccess, a status code, or a cached original.
    // Every legacy URL must return the exact WebP bytes with the correct MIME type.
    foreach ( $checks as $check ) {
+    Pixora_Diagnostics::stage( 'آزمایش آدرس ' . basename( $check['source'] ) );
     $response = wp_safe_remote_get( add_query_arg( 'pixora_check', wp_generate_uuid4(), $check['url'] ), array( 'timeout' => 10, 'redirection' => 0, 'limit_response_size' => filesize( $check['file'] ) + 1, 'headers' => array( 'Cache-Control' => 'no-cache', 'Accept' => 'image/webp' ) ) );
     if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) || 'image/webp' !== strtolower( trim( explode( ';', wp_remote_retrieve_header( $response, 'content-type' ) )[0] ) ) || ! hash_equals( hash_file( 'sha256', $check['file'] ), hash( 'sha256', wp_remote_retrieve_body( $response ) ) ) ) {
      $detail = is_wp_error( $response ) ? $response->get_error_message() : sprintf( 'HTTP %d؛ نوع محتوا: %s؛ عدم تطابق پاسخ با WebP', wp_remote_retrieve_response_code( $response ), wp_remote_retrieve_header( $response, 'content-type' ) );
