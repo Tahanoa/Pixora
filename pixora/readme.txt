@@ -3,7 +3,7 @@ Contributors: tahanoa
 Tags: webp, images, optimization, media
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,8 +17,10 @@ Original files stay on disk. Existing hardcoded URLs are preserved and continue 
 == Installation ==
 1. Upload the pixora folder to wp-content/plugins or install its ZIP in WordPress.
 2. Activate Pixora.
-3. Open Media > Pixora to configure quality and process or restore your library.
+3. Open Pixora in the main admin menu to configure quality and process or restore your library.
 
 == Changelog ==
+= 0.2.0 =
+Persian RTL dashboard, standalone menu, tahanoa author credit, and per-image media library optimization.
 = 0.1.0 =
 Initial development release. Validate on staging before production deployment.

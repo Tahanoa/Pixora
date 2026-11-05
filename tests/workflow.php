@@ -6,14 +6,22 @@ mkdir($root);
 $GLOBALS['uploads'] = $root;
 $GLOBALS['meta'] = array(); $GLOBALS['options'] = array();
 $GLOBALS['mime'] = 'image/jpeg'; $GLOBALS['file'] = $root . '/sample.jpg';
-class WP_Error { public $code; function __construct($code, $message = '') { $this->code = $code; } }
+class WP_Error { function get_error_message() { return $this->code; } public $code; function __construct($code, $message = '') { $this->code = $code; } }
 function is_wp_error($v) { return $v instanceof WP_Error; }
 function __($s, $domain = '') { return $s; }
 function add_filter() {} function add_action() {}
+function current_user_can($cap, $id = null) { return empty($GLOBALS['deny']); }
+function esc_attr($v) { return htmlspecialchars((string)$v, ENT_QUOTES); }
+function get_post_type($id) { return $id === 1 ? 'attachment' : 'post'; }
+function check_ajax_referer($action, $key) { $GLOBALS['nonce_checked'] = true; }
+class JsonResponse extends Exception { public $ok; public $data; function __construct($ok, $data) { $this->ok = $ok; $this->data = $data; } }
+function wp_send_json_error($data, $status = 200) { throw new JsonResponse(false, $data); }
+function wp_send_json_success($data) { throw new JsonResponse(true, $data); }
 function wp_parse_args($a, $b) { return array_merge($b, $a); }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
 function add_option($k, $v, $deprecated = '', $autoload = null) { if (isset($GLOBALS['options'][$k])) return false; $GLOBALS['options'][$k] = $v; return true; }
 function delete_option($k) { unset($GLOBALS['options'][$k]); }
+function size_format($v) { return $v . ' B'; }
 function absint($v) { return abs((int)$v); }
 function get_post_meta($id, $k, $single) { return $GLOBALS['meta'][$k] ?? ''; }
 function add_post_meta($id, $k, $v, $unique) { if (isset($GLOBALS['meta'][$k])) return false; $GLOBALS['meta'][$k] = $v; return true; }
@@ -68,6 +76,21 @@ try {
  unlink($root . '/sample-150.jpg');
  check(is_wp_error(Pixora::optimize(1)) && !get_post_meta(1, Pixora::BACKUP, true), 'Missing thumbnail preserves original state');
  check(!Pixora::safe_file(__FILE__), 'Files outside uploads are rejected');
+ $post = (object)array('ID' => 1, 'post_mime_type' => 'image/jpeg');
+ check(strpos(Pixora::media_button($post), 'data-pixora-id="1"') !== false, 'Media action targets selected attachment');
+ check(isset(Pixora::media_fields(array(), $post)['pixora']), 'Grid details expose Pixora control');
+ check(isset(Pixora::media_actions(array(), $post)['pixora']), 'List view exposes Pixora control');
+ $GLOBALS['deny'] = true;
+ check(Pixora::media_button($post) === '', 'Unauthorized users do not see media action');
+ $_POST['id'] = 1;
+ try { Pixora::single(); } catch (JsonResponse $response) { check(!$response->ok && !empty($GLOBALS['nonce_checked']), 'Single action verifies nonce and denies unauthorized access'); }
+ $GLOBALS['deny'] = false;
+ $_POST['id'] = 2;
+ try { Pixora::single(); } catch (JsonResponse $response) { check(!$response->ok, 'Single action rejects non-attachment posts'); }
+ file_put_contents($root . '/sample-150.jpg', str_repeat('j', 500));
+ $_POST['id'] = 1;
+ try { Pixora::single(); } catch (JsonResponse $response) { check($response->ok && $GLOBALS['mime'] === 'image/webp', 'Single action optimizes selected media'); }
+ check(strpos(Pixora::media_button($post), 'data-pixora-id') === false, 'Optimized media shows status instead of repeated action');
  check(Pixora::sanitize(array('quality' => 200))['quality'] === 100, 'Quality is bounded');
 } finally {
  foreach (glob($root . '/*') as $path) unlink($path);
