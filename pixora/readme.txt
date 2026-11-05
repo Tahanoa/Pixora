@@ -3,7 +3,7 @@ Contributors: tahanoa
 Tags: webp, images, optimization, media
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,6 +20,8 @@ Original files stay on disk. Existing hardcoded URLs are preserved and continue 
 3. Open Pixora in the main admin menu to configure quality and process or restore your library.
 
 == Changelog ==
+= 0.3.0 =
+Automatic Apache/LiteSpeed detection and explicit disk reclamation after verified legacy URL mapping. Nginx and unknown hosts retain originals. Requires an independent backup; restoration is unavailable after deletion. Rules persist in uploads .htaccess files and must be preserved during migration.
 = 0.2.0 =
 Persian RTL dashboard, standalone menu, tahanoa author credit, and per-image media library optimization.
 = 0.1.0 =
