@@ -1,6 +1,7 @@
 <?php
 // Isolated workflow test. No WordPress installation or real encoder is implied.
 define('ABSPATH', __DIR__);
+define('HOUR_IN_SECONDS', 3600);
 $root = sys_get_temp_dir() . '/pixora-test-' . uniqid();
 mkdir($root);
 $GLOBALS['uploads'] = $root;
@@ -91,8 +92,18 @@ try {
  $_POST['id'] = 1;
  try { Pixora::single(); } catch (JsonResponse $response) { check($response->ok && $GLOBALS['mime'] === 'image/webp', 'Single action optimizes selected media'); }
  check(strpos(Pixora::media_button($post), 'data-pixora-id') === false, 'Optimized media shows status instead of repeated action');
+ $held = Pixora::acquire_lock(1);
+ check(is_resource($held) && is_wp_error(Pixora::acquire_lock(1)), 'Live file lock prevents concurrent workers');
+ Pixora::release_lock($held);
+ $again = Pixora::acquire_lock(1);
+ check(is_resource($again), 'Released file lock can be reacquired');
+ Pixora::release_lock($again);
+ add_option('pixora_lock_1', time() - 7200);
+ $recovered = Pixora::acquire_lock(1);
+ check(is_resource($recovered) && get_option('pixora_lock_1') === false, 'Stale legacy lock recovers automatically');
+ Pixora::release_lock($recovered);
  check(Pixora::sanitize(array('quality' => 200))['quality'] === 100, 'Quality is bounded');
 } finally {
- foreach (glob($root . '/*') as $path) unlink($path);
+ foreach (array_merge(glob($root . '/*'), glob($root . '/.pixora-*.lock')) as $path) unlink($path);
  rmdir($root);
 }

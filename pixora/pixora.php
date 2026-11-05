@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: فشرده‌سازی تصاویر و تبدیل به WebP با حفظ فایل اصلی و امکان بازگردانی.
- * Version: 0.3.1
+ * Version: 0.3.2
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -29,6 +29,31 @@ final class Pixora {
   add_filter( 'media_row_actions', array( __CLASS__, 'media_actions' ), 10, 2 );
   add_filter( 'attachment_fields_to_edit', array( __CLASS__, 'media_fields' ), 10, 2 );
   add_action( 'delete_attachment', array( __CLASS__, 'cleanup' ) );
+ }
+ // OS file locks are released even when PHP is killed or reaches its execution limit.
+ public static function acquire_lock( $id ) {
+  $legacy = 'pixora_lock_' . absint( $id );
+  $started = get_option( $legacy, false );
+  if ( false !== $started ) {
+   // Allow an in-flight request from an older plugin version time to finish.
+   if ( ! is_numeric( $started ) || (int) $started > time() - HOUR_IN_SECONDS ) {
+    return new WP_Error( 'busy', 'یک پردازش قدیمی هنوز ممکن است فعال باشد؛ حداکثر یک ساعت بعد دوباره تلاش کنید.' );
+   }
+   delete_option( $legacy );
+  }
+  $uploads = wp_get_upload_dir();
+  $base = realpath( $uploads['basedir'] );
+  if ( ! $base || ! is_writable( $base ) ) { return new WP_Error( 'lock', 'پوشهٔ بارگذاری برای ایجاد قفل پردازش قابل نوشتن نیست.' ); }
+  $path = $base . '/.pixora-' . absint( $id ) . '.lock';
+  if ( is_link( $path ) ) { return new WP_Error( 'lock', 'مسیر قفل پردازش نامعتبر است.' ); }
+  $handle = fopen( $path, 'c' );
+  if ( ! $handle ) { return new WP_Error( 'lock', 'ایجاد قفل پردازش ممکن نشد.' ); }
+  if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) { fclose( $handle ); return new WP_Error( 'busy', 'تصویر واقعاً در حال پردازش است؛ کمی بعد دوباره تلاش کنید.' ); }
+  // Keep the empty file: unlinking a lock file can let two processes lock different inodes.
+  return $handle;
+ }
+ public static function release_lock( $handle ) {
+  if ( is_resource( $handle ) ) { flock( $handle, LOCK_UN ); fclose( $handle ); }
  }
  public static function options() {
   return wp_parse_args( get_option( self::OPTION, array() ), array( 'quality' => 82, 'automatic' => 1 ) );
@@ -61,9 +86,9 @@ final class Pixora {
   if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) {
    return new WP_Error( 'support', __( 'سرور شما از ساخت تصاویر WebP پشتیبانی نمی‌کند.', 'pixora' ) );
   }
-  // Atomic option insertion prevents simultaneous upload/batch requests for this attachment.
-  $lock = 'pixora_lock_' . $id;
-  if ( ! add_option( $lock, time(), '', false ) ) { return new WP_Error( 'busy', __( 'تصویر در حال پردازش است؛ کمی بعد دوباره تلاش کنید.', 'pixora' ) ); }
+  // A process-owned lock prevents simultaneous upload/batch requests for this attachment.
+  $lock = self::acquire_lock( $id );
+  if ( is_wp_error( $lock ) ) { return $lock; }
   $created = array();
   try {
    $metadata = is_array( $metadata ) ? $metadata : wp_get_attachment_metadata( $id );
@@ -134,12 +159,12 @@ final class Pixora {
    return $new;
   } finally {
    foreach ( $created as $path ) { if ( self::safe_file( $path ) ) { wp_delete_file( $path ); } }
-   delete_option( $lock );
+   self::release_lock( $lock );
   }
  }
  public static function restore( $id ) {
-  $lock = 'pixora_lock_' . $id;
-  if ( ! add_option( $lock, time(), '', false ) ) { return new WP_Error( 'busy', __( 'تصویر در حال پردازش است؛ کمی بعد دوباره تلاش کنید.', 'pixora' ) ); }
+  $lock = self::acquire_lock( $id );
+  if ( is_wp_error( $lock ) ) { return $lock; }
   try {
    $backup = get_post_meta( $id, self::BACKUP, true );
    if ( ! empty( $backup['reclaimed'] ) ) { return new WP_Error( 'reclaimed', 'اصل تصاویر در حالت آزادسازی حذف شده‌اند؛ بازگردانی فقط از بکاپ خارج از افزونه ممکن است.' ); }
@@ -153,7 +178,7 @@ final class Pixora {
    // Keep generated files: published content may already contain these WebP URLs.
    delete_post_meta( $id, self::BACKUP );
    return true;
-  } finally { delete_option( $lock ); }
+  } finally { self::release_lock( $lock ); }
  }
  public static function cleanup( $id ) {
   $backup = get_post_meta( $id, self::BACKUP, true );
@@ -211,9 +236,9 @@ final class Pixora {
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
   if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.3.1' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.3.1', true );
-  wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.3.2' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.3.2', true );
+  wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'modeOptimize' => 'فشرده‌سازی تصاویر', 'modeRestore' => 'بازگردانی تصاویر', 'modeReclaim' => 'حذف اصل تصاویر', 'resume' => 'ادامهٔ پردازش از آخرین تصویر تأییدشده', 'restart' => 'شروع دوباره از ابتدا', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
   if ( ! current_user_can( 'manage_options' ) ) { return; }
@@ -223,7 +248,7 @@ final class Pixora {
   foreach ( $rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $before += $data['before']; $after += $data['after']; ++$count; $disk += $data['disk_freed'] ?? 0; } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۳.۱ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۳.۲ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">
@@ -249,6 +274,7 @@ final class Pixora {
     </section>
     <section class="pixora-card"><h2>مدیریت تصاویر قبلی</h2><p class="pixora-muted">تصاویر را به‌ترتیب و به‌صورت تدریجی پردازش کنید. تا پایان عملیات این صفحه را باز نگه دارید.</p>
      <div class="pixora-actions"><button type="button" class="button button-primary" data-pixora="optimize">فشرده‌سازی تصاویر با Pixora</button><button type="button" class="button" data-pixora="restore">بازگردانی تصاویر اصلی</button><button type="button" class="button" id="pixora-stop" disabled>توقف پس از تصویر جاری</button></div>
+     <p><button type="button" class="button" id="pixora-reset">شروع دوباره از ابتدا</button></p>
      <p id="pixora-progress" class="pixora-progress" role="status" aria-live="polite">آمادهٔ پردازش تصاویر</p><pre id="pixora-log" class="pixora-log" aria-label="گزارش پردازش"></pre>
     </section>
    </div>

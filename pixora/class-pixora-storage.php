@@ -12,8 +12,8 @@ final class Pixora_Storage {
  }
  public static function reclaim( $id ) {
   if ( ! self::host()['supported'] ) { return new WP_Error( 'host', 'هاست سازگار با تنظیم خودکار تشخیص داده نشد؛ فایل‌های اصلی حفظ شدند.' ); }
-  $lock = 'pixora_lock_' . $id;
-  if ( ! add_option( $lock, time(), '', false ) ) { return new WP_Error( 'busy', 'تصویر در حال پردازش است.' ); }
+  $lock = Pixora::acquire_lock( $id );
+  if ( is_wp_error( $lock ) ) { return $lock; }
   $handle = null; $previous = null; $committed = false;
   try {
    $backup = get_post_meta( $id, Pixora::BACKUP, true );
@@ -54,7 +54,8 @@ final class Pixora_Storage {
    foreach ( $checks as $check ) {
     $response = wp_safe_remote_get( add_query_arg( 'pixora_check', wp_generate_uuid4(), $check['url'] ), array( 'timeout' => 10, 'redirection' => 0, 'limit_response_size' => filesize( $check['file'] ) + 1, 'headers' => array( 'Cache-Control' => 'no-cache', 'Accept' => 'image/webp' ) ) );
     if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) || 'image/webp' !== strtolower( trim( explode( ';', wp_remote_retrieve_header( $response, 'content-type' ) )[0] ) ) || ! hash_equals( hash_file( 'sha256', $check['file'] ), hash( 'sha256', wp_remote_retrieve_body( $response ) ) ) ) {
-     return new WP_Error( 'probe', 'آزمایش آدرس قدیمی موفق نبود؛ تنظیم جدید برگشت داده شد و اصل تصاویر حفظ شدند.' );
+     $detail = is_wp_error( $response ) ? $response->get_error_message() : sprintf( 'HTTP %d؛ نوع محتوا: %s؛ عدم تطابق پاسخ با WebP', wp_remote_retrieve_response_code( $response ), wp_remote_retrieve_header( $response, 'content-type' ) );
+     return new WP_Error( 'probe', 'آزمایش آدرس قدیمی موفق نبود؛ اصل تصاویر حفظ شدند. ' . $detail );
     }
    }
    // Persist the irreversible state before deleting anything. Static rules survive plugin deactivation.
@@ -80,7 +81,7 @@ final class Pixora_Storage {
     if ( ! $committed && null !== $previous ) { self::write( $handle, $previous ); }
     flock( $handle, LOCK_UN ); fclose( $handle );
    }
-   delete_option( $lock );
+   Pixora::release_lock( $lock );
   }
  }
  private static function write( $handle, $content ) {

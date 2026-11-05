@@ -78,7 +78,7 @@ try {
  check(get_post_meta(1, Pixora::BACKUP, true)['disk_freed'] === 1500, 'Disk reclamation is persisted separately from payload savings');
  check($GLOBALS['requests'][0][1]['redirection'] === 0, 'Probe does not accept redirected responses');
 } finally {
- foreach (glob($root . '/*') as $path) unlink($path);
+ foreach (array_merge(glob($root . '/*'), glob($root . '/.pixora-*.lock')) as $path) unlink($path);
  if (file_exists($root . '/.htaccess')) unlink($root . '/.htaccess');
  rmdir($root);
 }

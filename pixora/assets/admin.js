@@ -1,6 +1,28 @@
 /* global pixora */
 (() => {
  'use strict';
+ async function request(body) {
+  const response = await fetch(pixora.url, { method: 'POST', credentials: 'same-origin', body });
+  const text = await response.text();
+  if (response.status === 403 || text.trim() === '-1') throw new Error('اعتبار درخواست یا دسترسی منقضی شده است؛ صفحه را تازه کنید و ادامه دهید.');
+  if (!response.ok) throw new Error(`خطای HTTP ${response.status}؛ احتمال محدودیت زمان یا منابع هاست. با همان دکمه پردازش را ادامه دهید.`);
+  let result;
+  try { result = JSON.parse(text); } catch {
+   const reason = /memory size/i.test(text) ? 'حافظهٔ PHP کافی نیست.' : /execution time/i.test(text) ? 'زمان اجرای PHP تمام شده است.' : 'پاسخ معتبر JSON از هاست دریافت نشد؛ گزارش خطای PHP هاست را بررسی کنید.';
+   throw new Error(reason);
+  }
+  if (!result.success) throw new Error(result.data?.message || pixora.failed);
+  return result.data;
+ }
+ const jobKey = mode => `pixora:${pixora.url}:${mode}`;
+ const jobs = {};
+ function readJob(mode) {
+  try { return jobs[mode] || JSON.parse(sessionStorage.getItem(jobKey(mode)) || 'null'); } catch { return jobs[mode] || null; }
+ }
+ function saveJob(mode, job) {
+  jobs[mode] = job;
+  try { if (job) sessionStorage.setItem(jobKey(mode), JSON.stringify(job)); else sessionStorage.removeItem(jobKey(mode)); } catch { /* In-memory continuation remains available. */ }
+ }
  document.addEventListener('click', async event => {
   const button = event.target.closest('[data-pixora-id]');
   if (!button) return;
@@ -14,12 +36,9 @@
   if (status) status.textContent = '';
   try {
    const body = new URLSearchParams({ action: 'pixora_optimize', nonce: pixora.nonce, id: button.dataset.pixoraId });
-   const response = await fetch(pixora.url, { method: 'POST', credentials: 'same-origin', body });
-   if (!response.ok) throw new Error(pixora.failed);
-   const result = await response.json();
-   if (!result.success) throw new Error(result.data?.message || pixora.failed);
+   const result = await request(body);
    button.textContent = pixora.optimized;
-   if (status) status.textContent = result.data.message;
+   if (status) status.textContent = result.message;
   } catch (error) {
    button.disabled = false;
    button.textContent = label;
@@ -32,9 +51,16 @@
  const log = document.getElementById('pixora-log');
  if (!stop) return;
  let stopped = false;
+ const reset = document.getElementById('pixora-reset');
+ reset?.addEventListener('click', () => {
+  ['optimize', 'restore', 'reclaim'].forEach(mode => saveJob(mode, null));
+  progress.textContent = 'پیشرفت ذخیره‌شده پاک شد؛ عملیات بعدی از ابتدا شروع می‌شود.';
+ });
  stop.addEventListener('click', () => { stopped = true; stop.disabled = true; });
  buttons.forEach(button => button.addEventListener('click', async () => {
-  const reclaim = button.dataset.pixora === 'reclaim';
+  const mode = button.dataset.pixora;
+  const reclaim = mode === 'reclaim';
+  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim }[mode];
   if (reclaim && !document.getElementById('pixora-cleanup-consent')?.checked) {
    progress.textContent = pixora.consent;
    return;
@@ -42,27 +68,26 @@
   stopped = false;
   buttons.forEach(item => { item.disabled = true; });
   stop.disabled = false;
-  let cursor = 0, processed = 0, skipped = 0, saved = 0, freed = 0, remaining = 0;
+  let { cursor = 0, processed = 0, skipped = 0, saved = 0, freed = 0, remaining = 0 } = readJob(mode) || {};
+  if (reset) reset.disabled = true;
   log.textContent = '';
-  progress.textContent = pixora.working;
+  progress.textContent = `${modeLabel} — ${cursor ? pixora.resume : pixora.working}`;
   try {
    while (!stopped) {
     const body = new URLSearchParams({ action: 'pixora_batch', nonce: pixora.nonce, mode: button.dataset.pixora, cursor: String(cursor), consent: reclaim ? 'delete-originals' : '' });
-    const response = await fetch(pixora.url, { method: 'POST', credentials: 'same-origin', body });
-    if (!response.ok) throw new Error(pixora.failed);
-    const result = await response.json();
-    if (!result.success) throw new Error(result.data?.message || pixora.failed);
-    if (result.data.done) { progress.textContent += ` — ${pixora.finished}`; break; }
-    cursor = result.data.cursor;
-    if (result.data.status === 'processed') processed++; else skipped++;
-    saved += result.data.saved;
-    freed += result.data.freed || 0;
-    remaining += result.data.remaining || 0;
-    progress.textContent = `${pixora.processed}: ${processed.toLocaleString('fa-IR')} | ${pixora.skipped}: ${skipped.toLocaleString('fa-IR')} | ${((reclaim ? freed : saved) / 1048576).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ${reclaim ? pixora.freed : pixora.saved}${reclaim && remaining ? ` | ${pixora.remaining}: ${remaining.toLocaleString('fa-IR')}` : ''}`;
-    log.textContent = (`#${cursor}: ${result.data.message}\n` + log.textContent).slice(0, 20000);
+    const result = await request(body);
+    if (result.done) { saveJob(mode, null); progress.textContent += ` — ${pixora.finished}`; break; }
+    cursor = result.cursor;
+    if (result.status === 'processed') processed++; else skipped++;
+    saved += result.saved;
+    freed += result.freed || 0;
+    remaining += result.remaining || 0;
+    saveJob(mode, { cursor, processed, skipped, saved, freed, remaining });
+    progress.textContent = `${modeLabel} | ${pixora.processed}: ${processed.toLocaleString('fa-IR')} | ${pixora.skipped}: ${skipped.toLocaleString('fa-IR')} | ${((reclaim ? freed : saved) / 1048576).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ${reclaim ? pixora.freed : pixora.saved}${reclaim && remaining ? ` | ${pixora.remaining}: ${remaining.toLocaleString('fa-IR')}` : ''}`;
+    log.textContent = (`#${cursor}: ${result.message}\n` + log.textContent).slice(0, 20000);
    }
    if (stopped) progress.textContent += ` — ${pixora.stopped}`;
-  } catch (error) { log.textContent = `${error.message}\n${log.textContent}`; }
-  finally { buttons.forEach(item => { item.disabled = item.dataset.pixoraUnavailable === 'true'; }); stop.disabled = true; }
+  } catch (error) { log.textContent = `${error.message}\nآخرین شناسهٔ تکمیل‌شده: ${cursor}؛ برای ادامه همان دکمه را بزنید.\n${log.textContent}`; }
+  finally { buttons.forEach(item => { item.disabled = item.dataset.pixoraUnavailable === 'true'; }); stop.disabled = true; if (reset) reset.disabled = false; }
  }));
 })();
