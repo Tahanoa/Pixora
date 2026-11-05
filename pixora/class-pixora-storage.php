@@ -51,7 +51,7 @@ final class Pixora_Storage {
    if ( ! empty( $backup['reclaimed'] ) ) { return new WP_Error( 'state', 'آزادسازی این تصویر قبلاً آغاز یا انجام شده است؛ برای جلوگیری از حذف تکراری رد شد.' ); }
    $sources = array( $backup['file'] );
    foreach ( $backup['metadata']['sizes'] ?? array() as $size ) { $sources[] = dirname( $backup['file'] ) . '/' . $size['file']; }
-   $sources = array_values( array_unique( $sources ) );
+   $sources = isset( $backup['sources'] ) && is_array( $backup['sources'] ) ? $backup['sources'] : array_values( array_unique( $sources ) );
    $targets = $backup['generated'];
    if ( count( $sources ) !== count( $targets ) ) { return new WP_Error( 'mapping', 'اطلاعات نگاشت کامل نیست؛ فایل‌های اصلی حفظ شدند.' ); }
    $uploads = wp_get_upload_dir();
@@ -61,11 +61,11 @@ final class Pixora_Storage {
    foreach ( $sources as $index => $source ) {
     $target = $targets[ $index ];
     // Restrict automatic rule generation to unambiguous filenames and one real directory.
-    if ( ! Pixora::safe_file( $source ) || ! Pixora::safe_file( $target ) || is_link( $source ) || is_link( $target ) || dirname( $source ) !== $dir || dirname( $target ) !== $dir || ! preg_match( '/\A[A-Za-z0-9_.-]+\z/', basename( $source ) ) || ! preg_match( '/\A[A-Za-z0-9_.-]+\.webp\z/', basename( $target ) ) || filesize( $target ) > 20 * MB_IN_BYTES ) {
-     return new WP_Error( 'files', 'این فایل برای آزادسازی خودکار مناسب نیست؛ اصل تصویر حفظ شد. نام فایل باید لاتین و بدون فاصله باشد.' );
+    if ( ! Pixora::safe_file( $source ) || ! Pixora::safe_file( $target ) || is_link( $source ) || is_link( $target ) || dirname( $source ) !== $dir || dirname( $target ) !== $dir || ! preg_match( '/\A[\p{L}\p{N}\p{M}_. -]+\z/u', basename( $source ) ) || ! preg_match( '/\A[\p{L}\p{N}\p{M}_. -]+\.webp\z/u', basename( $target ) ) || filesize( $target ) > 20 * MB_IN_BYTES ) {
+     return new WP_Error( 'files', 'این فایل برای آزادسازی خودکار مناسب نیست؛ اصل تصویر حفظ شد. نام فایل نباید نویسهٔ کنترلی یا علامت‌های ویژهٔ قواعد هدایت داشته باشد.' );
     }
     if ( $source === $target || realpath( $source ) === realpath( $target ) ) { return new WP_Error( 'mapping', 'نگاشت نامعتبر است.' ); }
-    $rules[] = 'RewriteRule ^' . preg_quote( basename( $source ), '/' ) . '$ ' . basename( $target ) . ' [END]';
+    $rules[] = 'RewriteRule "^' . preg_quote( basename( $source ), '/' ) . '$" "' . basename( $target ) . '" [END]';
     $relative = substr( realpath( $source ), strlen( realpath( $uploads['basedir'] ) ) + 1 );
     $checks[] = array( 'url' => trailingslashit( $uploads['baseurl'] ) . implode( '/', array_map( 'rawurlencode', explode( DIRECTORY_SEPARATOR, $relative ) ) ), 'file' => $target, 'source' => $source, 'hash' => hash_file( 'sha256', $source ) );
    }

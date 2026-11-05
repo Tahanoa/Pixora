@@ -2,35 +2,51 @@
 Contributors: tahanoa
 Tags: webp, images, optimization, media
 Requires at least: 6.5
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.3.4
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Reversible WebP conversion for JPEG and PNG attachments with original URL preservation.
+Persian image optimization and optional verified disk reclamation, with one-step and background workflows.
 
 == Description ==
-Convert new uploads automatically or process your existing media library one attachment at a time. Configure quality, view image payload savings, and restore originals. Requires GD or Imagick with WebP encoding support.
+Convert JPEG and PNG uploads to WebP, preserve transparency, choose quality presets, process existing images, and optionally reclaim originals after verifying all legacy URLs. A standalone Persian RTL dashboard, per-image media controls, separate payload/disk savings, resumable batches, and support-report copying are included.
 
-Original files stay on disk. Existing hardcoded URLs are preserved and continue serving originals; newly generated attachment output uses WebP. Back up uploads and your database before processing. Savings vary. Disk usage increases because originals are retained. Animated PNGs, GIFs, and SVGs are skipped. External media storage is not supported in this version.
+Original deletion is opt-in and irreversible without an independent backup. Automatic upload cleanup uses WordPress Cron after conversion; its timing depends on the site's scheduler. Apache/LiteSpeed routing support and successful exact-response checks are mandatory. Nginx or unknown hosts retain originals. Static rules remain in uploads .htaccess files after deactivation and must be preserved during migration.
+
+Existing hardcoded URLs retain their original files until reclamation, then serve verified WebP through routing rules. The full WordPress original_image is included in new conversions. Old conversions may retain unmapped files. Animated PNG, GIF, SVG, pre-existing WebP and external media storage are not converted. Savings vary; no fixed percentage or lossless quality is promised.
 
 == Installation ==
-1. Upload the pixora folder to wp-content/plugins or install its ZIP in WordPress.
-2. Activate Pixora.
-3. Open Pixora in the main admin menu to configure quality and process or restore your library.
+1. Upload the pixora folder to wp-content/plugins or install its ZIP.
+2. Activate Pixora and open its top-level admin menu.
+3. Back up uploads and the database before enabling deletion.
+4. Choose compression only, one-step optimize and reclaim, or opt-in scheduled cleanup for future uploads.
+
+== Frequently Asked Questions ==
+= Does compression alone delete originals? =
+No. Use the explicit one-step cleanup action or enable automatic cleanup with backup consent.
+
+= Can I restore deleted originals? =
+Only from your independent backup. In-plugin restoration is available before original deletion.
+
+= Does cleanup run immediately after upload? =
+Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.4.0 =
+One-step optimization and reclamation, opt-in upload cleanup queue, per-image cleanup/restore and status, quality presets, distinct partial/failure outcomes, copied reports, Persian filename routing and full-resolution WordPress original mapping. Real WordPress integration suite added.
 = 0.3.4 =
-Select only operation-relevant attachments. Follow bounded canonical redirects to configured hosts while preserving exact WebP verification before deletion.
+Eligible attachment queries and canonical URL redirect verification.
 = 0.3.3 =
-Release decoded image memory between sizes, preflight available memory, catch encoder exceptions, and return best-effort fatal diagnostics with attachment ID and processing stage.
+Image memory release and PHP fatal diagnostics.
 = 0.3.2 =
-Process-owned file locks, stale legacy lock recovery, resumable batch progress, explicit operation labels, and detailed request errors.
+Process-owned locks, legacy lock recovery and resumable processing.
 = 0.3.1 =
-Always display the original-image deletion control, with a clear disabled reason on unsupported hosts.
+Always-visible deletion controls with host support explanation.
 = 0.3.0 =
-Automatic Apache/LiteSpeed detection and explicit disk reclamation after verified legacy URL mapping. Nginx and unknown hosts retain originals. Requires an independent backup; restoration is unavailable after deletion. Rules persist in uploads .htaccess files and must be preserved during migration.
+Verified optional disk reclamation.
 = 0.2.0 =
-Persian RTL dashboard, standalone menu, tahanoa author credit, and per-image media library optimization.
+Persian standalone dashboard and media controls.
 = 0.1.0 =
-Initial development release. Validate on staging before production deployment.
+Initial development release.

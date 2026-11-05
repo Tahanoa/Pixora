@@ -97,7 +97,7 @@ try {
   foreach ($backup['generated'] as $path) copy($path, $export . '/' . basename($path));
  }
 
- check(strpos($rules, 'RewriteRule ^sample\\.jpg$') !== false && strpos($rules, $previous) !== false, 'Persistent rules retain legacy URLs and existing host policy');
+ check(strpos($rules, 'RewriteRule "^sample\\.jpg$') !== false && strpos($rules, $previous) !== false, 'Persistent rules retain legacy URLs and existing host policy');
  check(is_wp_error(Pixora::restore(1)), 'Restoration is blocked after irreversible cleanup');
  check(is_wp_error(Pixora_Storage::reclaim(1)), 'Repeated cleanup does not delete outputs');
  check(get_post_meta(1, Pixora::BACKUP, true)['disk_freed'] === 1500, 'Disk reclamation is persisted separately from payload savings');

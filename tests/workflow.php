@@ -7,11 +7,13 @@ mkdir($root);
 $GLOBALS['uploads'] = $root;
 $GLOBALS['meta'] = array(); $GLOBALS['options'] = array();
 $GLOBALS['mime'] = 'image/jpeg'; $GLOBALS['file'] = $root . '/sample.jpg';
-class WP_Error { function get_error_message() { return $this->code; } public $code; function __construct($code, $message = '') { $this->code = $code; } }
+class WP_Error { function get_error_code() { return $this->code; } function get_error_message() { return $this->code; } public $code; function __construct($code, $message = '') { $this->code = $code; } }
 function is_wp_error($v) { return $v instanceof WP_Error; }
 function __($s, $domain = '') { return $s; }
 function add_filter() {} function add_action() {}
 function current_user_can($cap, $id = null) { return empty($GLOBALS['deny']); }
+function esc_html($v) { return htmlspecialchars((string)$v, ENT_QUOTES); }
+function get_post($id) { return (object)array('ID' => $id, 'post_mime_type' => $GLOBALS['mime']); }
 function esc_attr($v) { return htmlspecialchars((string)$v, ENT_QUOTES); }
 function get_post_type($id) { return $id === 1 ? 'attachment' : 'post'; }
 function check_ajax_referer($action, $key) { $GLOBALS['nonce_checked'] = true; }
@@ -95,7 +97,7 @@ try {
  file_put_contents($root . '/sample-150.jpg', str_repeat('j', 500));
  $_POST['id'] = 1;
  try { Pixora::single(); } catch (JsonResponse $response) { check($response->ok && $GLOBALS['mime'] === 'image/webp', 'Single action optimizes selected media'); }
- check(strpos(Pixora::media_button($post), 'data-pixora-id') === false, 'Optimized media shows status instead of repeated action');
+ check(strpos(Pixora::media_button($post), 'data-pixora-mode="optimize"') === false && strpos(Pixora::media_button($post), 'data-pixora-mode="reclaim"') !== false, 'Optimized media exposes cleanup and original-file status');
  $held = Pixora::acquire_lock(1);
  check(is_resource($held) && is_wp_error(Pixora::acquire_lock(1)), 'Live file lock prevents concurrent workers');
  Pixora::release_lock($held);

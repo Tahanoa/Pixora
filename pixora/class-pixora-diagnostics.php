@@ -39,6 +39,7 @@ final class Pixora_Diagnostics {
  public static function run( $id, $mode ) {
   self::begin( $id, $mode );
   try {
+   if ( 'optimize_reclaim' === $mode ) { return Pixora_Workflow::combined( $id ); }
    if ( 'reclaim' === $mode ) { return Pixora_Storage::reclaim( $id ); }
    if ( 'restore' === $mode ) { return Pixora::restore( $id ); }
    return Pixora::optimize( $id );
