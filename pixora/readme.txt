@@ -4,13 +4,15 @@ Tags: webp, images, optimization, media
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.2
+Stable tag: 0.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Persian image optimization and optional verified disk reclamation, with one-step and background workflows.
 
 == Description ==
+Pixora 0.5.0 adds a same-format disk optimizer. Smaller JPEG/PNG files atomically replace their predecessors without creating extra WebP copies, changing URLs, or requiring rewrite rules. An independent backup and explicit consent are required because previous quality cannot be restored in-plugin. WebP remains a separate optional workflow. Previously published WebP files remain intact.
+
 Convert JPEG and PNG uploads to WebP, preserve transparency, choose quality presets, process existing images, and optionally reclaim originals after verifying all legacy URLs. A standalone Persian RTL dashboard, per-image media controls, separate payload/disk savings, resumable batches, and support-report copying are included.
 
 Original deletion is opt-in and irreversible without an independent backup. Automatic upload cleanup uses WordPress Cron after conversion; its timing depends on the site's scheduler. Apache/LiteSpeed routing support and successful exact-response checks are mandatory. Nginx or unknown hosts retain originals. Static rules remain in uploads .htaccess files after deactivation and must be preserved during migration.
@@ -34,6 +36,8 @@ Only from your independent backup. In-plugin restoration is available before ori
 Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.5.0 =
+Add same-format JPEG/PNG atomic replacement for actual disk reduction without HTTP routing. Preserve file names, MIME, dimensions and existing URLs; skip non-smaller outputs and unchanged previously optimized files. Separate opt-in for automatic same-format uploads. Tested with a real Nginx static frontend that ignores .htaccess. See docs/RESEARCH.md in the source repository for reviewed approaches and evidence.
 = 0.4.2 =
 Pause bulk jobs on shared routing/preflight failures and preserve the failed image for retry. Hosting delivery issues still require successful verification.
 = 0.4.1 =

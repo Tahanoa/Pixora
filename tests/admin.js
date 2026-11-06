@@ -5,6 +5,7 @@ const node = dataset => ({ dataset, disabled: false, textContent: '', listeners:
 const optimize = node({ pixora: 'optimize' });
 const reclaim = node({ pixora: 'reclaim' });
 const combined = node({ pixora: 'optimize_reclaim' });
+const inplace = node({ pixora: 'inplace' });
 let delegated, confirmAllowed = true;
 const elements = { 'pixora-stop': node({}), 'pixora-progress': node({}), 'pixora-log': node({}), 'pixora-reset': node({}), 'pixora-cleanup-consent': { checked: false } };
 const storage = new Map();
@@ -12,7 +13,7 @@ let queue = [], cursors = [], payloads = [];
 const context = {
  URLSearchParams, console, window: { confirm: () => confirmAllowed },
  pixora: { url: '/admin-ajax.php', nonce: 'test', modeOptimize: 'optimize', modeReclaim: 'reclaim', modeCombined: 'combined', partialCount: 'partial', working: 'working', finished: 'done', consent: 'consent', resume: 'resume' },
- document: { addEventListener(type, listener) { delegated = listener; }, querySelectorAll(selector) { return selector === '[data-pixora]' ? [optimize, reclaim, combined] : []; }, getElementById(id) { return elements[id]; } },
+ document: { addEventListener(type, listener) { delegated = listener; }, querySelectorAll(selector) { return selector === '[data-pixora]' ? [optimize, reclaim, combined, inplace] : []; }, getElementById(id) { return elements[id]; } },
  sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
  fetch: async (url, options) => {
   cursors.push(options.body.get('cursor'));
@@ -65,6 +66,15 @@ const json = data => ({ status: 200, text: JSON.stringify({ success: true, data 
  queue = [json({ done: true })];
  await combined.listeners.click();
  assert.equal(payloads.at(-1).cursor, haltedCursor);
+ elements['pixora-cleanup-consent'].checked = false;
+ const inplaceBefore = payloads.length;
+ await inplace.listeners.click();
+ assert.equal(payloads.length, inplaceBefore);
+ elements['pixora-cleanup-consent'].checked = true;
+ queue = [json({ cursor: 50, status: 'processed', freed: 123456, saved: 0, message: 'disk reduced' }), json({ done: true })];
+ await inplace.listeners.click();
+ assert.equal(payloads.at(-1).mode, 'inplace');
+ assert.equal(payloads.at(-1).consent, 'delete-originals');
  const resultNode = node({});
  const sibling = node({}); sibling.textContent = 'other action';
  const media = node({ pixoraId: '42', pixoraMode: 'optimize_reclaim' });

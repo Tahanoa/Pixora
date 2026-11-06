@@ -38,7 +38,7 @@
   event.stopPropagation();
   if (button.disabled) return;
   const mode = button.dataset.pixoraMode || 'optimize';
-  const destructive = ['reclaim', 'optimize_reclaim'].includes(mode);
+  const destructive = ['reclaim', 'optimize_reclaim', 'inplace'].includes(mode);
   if (destructive && !window.confirm(pixora.deleteConfirm)) return;
   const label = button.textContent;
   const container = button.closest('.pixora-media-tools');
@@ -74,14 +74,14 @@
   catch { copy.textContent = pixora.copyFailed; }
  });
  reset?.addEventListener('click', () => {
-  ['optimize', 'restore', 'reclaim', 'optimize_reclaim'].forEach(mode => saveJob(mode, null));
+  ['optimize', 'restore', 'reclaim', 'optimize_reclaim', 'inplace'].forEach(mode => saveJob(mode, null));
   progress.textContent = 'پیشرفت ذخیره‌شده پاک شد؛ عملیات بعدی از ابتدا شروع می‌شود.';
  });
  stop.addEventListener('click', () => { stopped = true; stop.disabled = true; });
  buttons.forEach(button => button.addEventListener('click', async () => {
   const mode = button.dataset.pixora;
-  const reclaim = ['reclaim', 'optimize_reclaim'].includes(mode);
-  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined }[mode];
+  const reclaim = ['reclaim', 'optimize_reclaim', 'inplace'].includes(mode);
+  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined, inplace: pixora.modeInplace }[mode];
   if (reclaim && !document.getElementById('pixora-cleanup-consent')?.checked) {
    progress.textContent = pixora.consent;
    return;
