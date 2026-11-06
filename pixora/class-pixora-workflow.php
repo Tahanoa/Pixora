@@ -14,9 +14,18 @@ final class Pixora_Workflow {
   }
   $cleaned = Pixora_Storage::reclaim( $id );
   if ( is_wp_error( $cleaned ) ) {
-   return new WP_Error( 'cleanup_pending', 'WebP آماده است، اما اصل تصویر حفظ شد: ' . $cleaned->get_error_message() );
+   return new WP_Error( 'cleanup_pending', 'WebP آماده است، اما اصل تصویر حفظ شد: ' . $cleaned->get_error_message(), array( 'cause' => $cleaned->get_error_code() ) );
   }
   return $cleaned;
+ }
+ public static function should_pause( $result ) {
+  if ( ! is_wp_error( $result ) ) { return false; }
+  $code = $result->get_error_code();
+  if ( 'cleanup_pending' === $code ) {
+   $data = $result->get_error_data();
+   $code = is_array( $data ) ? ( $data['cause'] ?? '' ) : '';
+  }
+  return in_array( $code, array( 'preflight', 'probe', 'host', 'rules', 'url', 'support' ), true );
  }
  public static function enqueue( $id ) {
   if ( ! Pixora::options()['auto_cleanup'] || ! get_post_meta( $id, Pixora::BACKUP, true ) ) { return; }

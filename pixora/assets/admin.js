@@ -98,6 +98,12 @@
     const body = new URLSearchParams({ action: 'pixora_batch', nonce: pixora.nonce, mode: button.dataset.pixora, cursor: String(cursor), consent: reclaim ? 'delete-originals' : '' });
     const result = await request(body);
     if (result.done) { saveJob(mode, null); progress.textContent += ` — ${pixora.finished}`; break; }
+    if (result.halt) {
+     saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial });
+     progress.textContent = `${modeLabel} — پردازش به علت مشکل بررسی مسیر متوقف شد؛ پس از رفع مشکل، همین دکمه را بزنید.`;
+     log.textContent = (`#${result.cursor}: ${result.message}\nادامهٔ بررسی سایر تصاویر متوقف شد.\n` + log.textContent).slice(0, 20000);
+     break;
+    }
     cursor = result.cursor;
     if (result.scanning) { saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial }); continue; }
     if (result.status === 'processed') processed++;

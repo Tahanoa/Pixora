@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: فشرده‌سازی تصاویر و تبدیل به WebP با حفظ فایل اصلی و امکان بازگردانی.
- * Version: 0.4.1
+ * Version: 0.4.2
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -247,7 +247,7 @@ final class Pixora {
    $code = $result->get_error_code();
    $status = 'cleanup_pending' === $code ? 'partial' : ( in_array( $code, array( 'done', 'format', 'no_saving', 'state', 'animated' ), true ) ? 'skipped' : 'failed' );
   }
-  wp_send_json_success( array( 'done' => false, 'cursor' => $id, 'status' => $status, 'message' => is_wp_error( $result ) ? $result->get_error_message() : __( 'عملیات با موفقیت انجام شد.', 'pixora' ), 'saved' => ! is_wp_error( $result ) && 'optimize' === $mode && $backup ? max( 0, $backup['before'] - $backup['after'] ) : 0, 'freed' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim' ), true ) ? $result['freed'] : 0, 'remaining' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim' ), true ) ? $result['remaining'] : 0 ) );
+  wp_send_json_success( array( 'done' => false, 'cursor' => $id, 'halt' => Pixora_Workflow::should_pause( $result ), 'status' => $status, 'message' => is_wp_error( $result ) ? $result->get_error_message() : __( 'عملیات با موفقیت انجام شد.', 'pixora' ), 'saved' => ! is_wp_error( $result ) && 'optimize' === $mode && $backup ? max( 0, $backup['before'] - $backup['after'] ) : 0, 'freed' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim' ), true ) ? $result['freed'] : 0, 'remaining' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim' ), true ) ? $result['remaining'] : 0 ) );
  }
  public static function media_button( $post ) {
   if ( ! current_user_can( 'upload_files' ) || ! current_user_can( 'edit_post', $post->ID ) || ! in_array( $post->post_mime_type, array( 'image/jpeg', 'image/png', 'image/webp' ), true ) ) { return ''; }
@@ -304,8 +304,8 @@ final class Pixora {
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
   if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.4.1' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.4.1', true );
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.4.2' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.4.2', true );
   wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'modeOptimize' => 'فشرده‌سازی تصاویر', 'modeRestore' => 'بازگردانی تصاویر', 'modeReclaim' => 'حذف اصل تصاویر', 'modeCombined' => 'فشرده‌سازی و آزادسازی', 'failedCount' => 'ناموفق', 'partialCount' => 'WebP آماده، اصل محفوظ', 'copied' => 'گزارش کپی شد', 'copyFailed' => 'کپی خودکار ممکن نشد؛ متن گزارش را انتخاب و کپی کنید.', 'deleteConfirm' => 'اصل تصویر پس از تأیید آدرس‌ها حذف می‌شود و بازگردانی فقط با بکاپ مستقل ممکن است. ادامه می‌دهید؟', 'resume' => 'ادامهٔ پردازش از آخرین تصویر تأییدشده', 'restart' => 'شروع دوباره از ابتدا', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
@@ -316,7 +316,7 @@ final class Pixora {
   foreach ( $rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $before += $data['before']; $after += $data['after']; ++$count; $disk += $data['disk_freed'] ?? 0; } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۴.۱ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۴.۲ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">

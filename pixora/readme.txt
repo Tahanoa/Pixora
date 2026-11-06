@@ -4,7 +4,7 @@ Tags: webp, images, optimization, media
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.1
+Stable tag: 0.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,8 @@ Only from your independent backup. In-plugin restoration is available before ori
 Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.4.2 =
+Pause bulk jobs on shared routing/preflight failures and preserve the failed image for retry. Hosting delivery issues still require successful verification.
 = 0.4.1 =
 Preflight image routing before disk-oriented conversion. Explicit temporary redirects to WebP avoid legacy extension MIME confusion. Preserve originals when exact response verification fails.
 = 0.4.0 =

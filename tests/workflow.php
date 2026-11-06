@@ -7,7 +7,7 @@ mkdir($root);
 $GLOBALS['uploads'] = $root;
 $GLOBALS['meta'] = array(); $GLOBALS['options'] = array();
 $GLOBALS['mime'] = 'image/jpeg'; $GLOBALS['file'] = $root . '/sample.jpg';
-class WP_Error { function get_error_code() { return $this->code; } function get_error_message() { return $this->code; } public $code; function __construct($code, $message = '') { $this->code = $code; } }
+class WP_Error { private $data; function get_error_data() { return $this->data; } function get_error_code() { return $this->code; } function get_error_message() { return $this->code; } public $code; function __construct($code, $message = '', $data = null) { $this->code = $code; $this->data = $data; } }
 function is_wp_error($v) { return $v instanceof WP_Error; }
 function __($s, $domain = '') { return $s; }
 function add_filter() {} function add_action() {}
@@ -120,6 +120,8 @@ try {
  $after_exception = Pixora::acquire_lock(1);
  check(is_resource($after_exception), 'Encoder exception releases processing lock');
  Pixora::release_lock($after_exception);
+ check(Pixora_Workflow::should_pause(new WP_Error('cleanup_pending', '', array('cause' => 'probe'))), 'Routing failure pauses bulk processing');
+ check(!Pixora_Workflow::should_pause(new WP_Error('cleanup_pending', '', array('cause' => 'files'))), 'Attachment-specific failure does not pause unrelated images');
  check(Pixora::sanitize(array('quality' => 200))['quality'] === 100, 'Quality is bounded');
 } finally {
  foreach (array_merge(glob($root . '/*'), glob($root . '/.pixora-*.lock')) as $path) unlink($path);

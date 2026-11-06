@@ -57,6 +57,14 @@ const json = data => ({ status: 200, text: JSON.stringify({ success: true, data 
  assert.equal(payloads.at(-1).mode, 'optimize_reclaim');
  assert.equal(payloads.at(-1).consent, 'delete-originals');
  assert.match(elements['pixora-progress'].textContent, /partial: ۱/);
+ queue = [json({ cursor: 42, halt: true, status: 'partial', message: 'routing failed' })];
+ await combined.listeners.click();
+ assert.equal(queue.length, 0);
+ assert.match(elements['pixora-progress'].textContent, /متوقف/);
+ const haltedCursor = payloads.at(-1).cursor;
+ queue = [json({ done: true })];
+ await combined.listeners.click();
+ assert.equal(payloads.at(-1).cursor, haltedCursor);
  const resultNode = node({});
  const sibling = node({}); sibling.textContent = 'other action';
  const media = node({ pixoraId: '42', pixoraMode: 'optimize_reclaim' });
