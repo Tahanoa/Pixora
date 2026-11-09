@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: کاهش فضای تصاویر با حفظ آدرس، تبدیل تصاویر به WebP و حذف اختیاری اصل پس از بررسی آدرس.
- * Version: 0.7.1
+ * Version: 0.8.0
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -19,12 +19,14 @@ require_once __DIR__ . '/class-pixora-workflow.php';
 require_once __DIR__ . '/class-pixora-gallery.php';
 require_once __DIR__ . '/class-pixora-webp-cleanup.php';
 require_once __DIR__ . '/class-pixora-bulk.php';
+require_once __DIR__ . '/class-pixora-upload.php';
 
 final class Pixora {
  const BACKUP = '_pixora_original';
  const OPTION = 'pixora_settings';
 
  public static function init() {
+  add_filter( 'wp_handle_upload', array( 'Pixora_Upload', 'handle' ), 20, 2 );
   add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'on_upload' ), 20, 2 );
   add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
   Pixora_Gallery::init();
@@ -64,7 +66,7 @@ final class Pixora {
   if ( is_resource( $handle ) ) { flock( $handle, LOCK_UN ); fclose( $handle ); }
  }
  public static function options() {
-  $options = wp_parse_args( get_option( self::OPTION, array() ), array( 'quality' => 82, 'automatic' => 1, 'auto_cleanup' => 0 ) );
+  $options = wp_parse_args( get_option( self::OPTION, array() ), array( 'quality' => 82, 'automatic' => 1, 'auto_cleanup' => 0, 'upload_webp_only' => 1 ) );
   // Old same-format upload opt-ins do not authorize enabling WebP uploads.
   if ( isset( $options['engine'] ) && 'webp' !== $options['engine'] ) { $options['automatic'] = 0; $options['auto_cleanup'] = 0; }
   unset( $options['engine'], $options['inplace_consent'] );
@@ -74,12 +76,13 @@ final class Pixora {
   $input = is_array( $input ) ? $input : array();
   $cleanup = ! empty( $input['automatic'] ) && ! empty( $input['auto_cleanup'] ) && ! empty( $input['cleanup_consent'] );
   if ( ! empty( $input['auto_cleanup'] ) && ! $cleanup && function_exists( 'add_settings_error' ) ) { add_settings_error( self::OPTION, 'cleanup_consent', 'آزادسازی خودکار فعال نشد؛ فشرده‌سازی خودکار و تأیید بکاپ لازم است.', 'warning' ); }
-  return array( 'auto_cleanup' => $cleanup ? 1 : 0, 'quality' => max( 1, min( 100, absint( $input['quality'] ?? 82 ) ) ), 'automatic' => ! empty( $input['automatic'] ) ? 1 : 0 );
+  return array( 'upload_webp_only' => ! empty( $input['upload_webp_only'] ) ? 1 : 0, 'auto_cleanup' => $cleanup ? 1 : 0, 'quality' => max( 1, min( 100, absint( $input['quality'] ?? 82 ) ) ), 'automatic' => ! empty( $input['automatic'] ) ? 1 : 0 );
  }
  public static function settings() {
   register_setting( 'pixora', self::OPTION, array( 'type' => 'array', 'sanitize_callback' => array( __CLASS__, 'sanitize' ) ) );
  }
  public static function on_upload( $metadata, $id ) {
+  if ( self::options()['upload_webp_only'] ) { return $metadata; }
   if ( self::options()['automatic'] && ! get_post_meta( $id, self::BACKUP, true ) ) {
    if ( self::options()['auto_cleanup'] ) {
     $check = Pixora_Storage::preflight( get_attached_file( $id ) );
@@ -332,9 +335,9 @@ final class Pixora {
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
   if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'pixora_page_pixora-gallery', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.7.1' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.7.1', true );
-  if ( 'pixora_page_pixora-gallery' === $hook ) { wp_enqueue_script( 'pixora-gallery', plugins_url( 'assets/gallery.js', __FILE__ ), array( 'pixora' ), '0.7.1', true ); }
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.8.0' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.8.0', true );
+  if ( 'pixora_page_pixora-gallery' === $hook ) { wp_enqueue_script( 'pixora-gallery', plugins_url( 'assets/gallery.js', __FILE__ ), array( 'pixora' ), '0.8.0', true ); }
   wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'modeOptimize' => 'فشرده‌سازی تصاویر', 'modeRestore' => 'بازگردانی تصاویر', 'modeReclaim' => 'حذف اصل تصاویر', 'modeCombined' => 'فشرده‌سازی و آزادسازی', 'modeStrict' => 'تبدیل WebP و حذف اصل پس از تأیید', 'modePurge' => 'حذف کپی‌های WebP قبلی', 'modePreview' => 'بررسی کپی‌های WebP قبلی', 'failedCount' => 'ناموفق', 'partialCount' => 'انجام بخشی از عملیات', 'copied' => 'گزارش کپی شد', 'copyFailed' => 'کپی خودکار ممکن نشد؛ متن گزارش را انتخاب و کپی کنید.', 'deleteConfirm' => 'نسخهٔ قبلی جایگزین یا حذف می‌شود و بازگردانی کیفیت قبلی فقط با بکاپ مستقل ممکن است. ادامه می‌دهید؟', 'resume' => 'ادامهٔ پردازش از آخرین تصویر تأییدشده', 'restart' => 'شروع دوباره از ابتدا', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
@@ -347,7 +350,7 @@ final class Pixora {
   foreach ( $rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $before += $data['before']; $after += $data['after']; ++$count; $disk += $data['disk_freed'] ?? 0; } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۷.۱ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۸.۰ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
    <?php if ( $job ) : ?><section class="pixora-card"><h2>عملیات روی رسانه‌های انتخاب‌شده</h2><p><?php echo esc_html( $job['label'] . ' · فقط ' . count( $job['ids'] ) . ' پیوست انتخاب‌شده پردازش می‌شود. ابتدا تأیید مربوط به این عملیات را در پایین علامت بزنید.' ); ?></p><input type="hidden" id="pixora-selection" data-mode="<?php echo esc_attr( $job['mode'] ); ?>" value="<?php echo esc_attr( $job['token'] ); ?>"><button type="button" class="button button-primary" data-pixora="<?php echo esc_attr( $job['mode'] ); ?>">اجرای عملیات انتخابی</button></section><?php endif; ?>
    <section class="pixora-card pixora-storage"><h2>حذف کپی‌های WebP قبلی Pixora</h2><p>فقط کپی‌های ثبت‌شدهٔ Pixora بررسی می‌شوند؛ WebPهای اصلیِ آپلودشده و فایل‌های بدون سابقه حذف نمی‌شوند. ابتدا JPEG/PNG و تمام اندازه‌های لازم باید موجود باشند؛ سپس پیوست به آن‌ها برمی‌گردد و کپی‌های بدون ارجاع قابل‌ردیابی حذف می‌شوند.</p>
@@ -355,7 +358,7 @@ final class Pixora {
    <label class="pixora-toggle"><input type="checkbox" id="pixora-webp-consent"><span>بکاپ مستقل دارم و پاک‌سازی کپی‌های قبلی پس از بازگشت پیوست‌ها به JPEG/PNG را تأیید می‌کنم.</span></label>
    <div class="pixora-actions"><button type="button" class="button" data-pixora="preview_webp_cleanup">بررسی اولیهٔ فضای قابل آزادسازی (بدون حذف)</button><button type="button" class="button" data-pixora="purge_webp">حذف کپی‌های WebP قبلی Pixora</button></div><p class="pixora-muted">در کتابخانهٔ رسانه، نمای فهرستی، کارهای دسته‌جمعی Pixora نیز در دسترس‌اند.</p></section>
 
-   <section class="pixora-note"><strong>وضعیت آپلودهای جدید: <?php echo esc_html( $settings['automatic'] ? 'پردازش خودکار فعال است' : 'پردازش خودکار فعال نیست' ); ?></strong><p><?php echo esc_html( $settings['auto_cleanup'] ? 'تبدیل به WebP و حذف اصل فقط پس از تأیید آدرس و اجرای زمان‌بندی وردپرس انجام می‌شود.' : 'اصل و WebP هر دو نگهداری می‌شوند و مصرف دیسک می‌تواند بیشتر شود.' ); ?> اندازه‌های بندانگشتی وردپرس جداگانه تولید می‌شوند.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=pixora-gallery' ) ); ?>">گالری و شناسایی تصاویر تکراری</a></section>
+   <section class="pixora-note"><strong>وضعیت آپلودهای جدید: <?php echo esc_html( ( $settings['upload_webp_only'] || $settings['automatic'] ) ? 'پردازش خودکار فعال است' : 'پردازش خودکار فعال نیست' ); ?></strong><p><?php echo esc_html( $settings['upload_webp_only'] ? 'فایل‌های JPEG/PNG جدید قبل از ثبت رسانه به WebP تبدیل می‌شوند؛ اصل پس از تبدیل موفق حذف می‌شود و اندازه‌های وردپرس از WebP ساخته می‌شوند. در صورت شکست تبدیل، بارگذاری با خطا متوقف می‌شود.' : ( $settings['auto_cleanup'] ? 'تبدیل به WebP و حذف اصل فقط پس از تأیید آدرس و اجرای زمان‌بندی وردپرس انجام می‌شود.' : 'اصل و WebP هر دو نگهداری می‌شوند و مصرف دیسک می‌تواند بیشتر شود.' ) ); ?> اندازه‌های بندانگشتی وردپرس جداگانه تولید می‌شوند.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=pixora-gallery' ) ); ?>">گالری و شناسایی تصاویر تکراری</a></section>
 
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">
@@ -374,6 +377,7 @@ final class Pixora {
    <div class="pixora-layout">
     <section class="pixora-card"><h2>تنظیمات فشرده‌سازی</h2><p class="pixora-muted">تعادل دلخواه خود را میان کیفیت و حجم انتخاب کنید.</p>
      <form method="post" action="options.php"><?php settings_fields( 'pixora' ); ?>
+      <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[upload_webp_only]" value="1" <?php checked( $settings['upload_webp_only'], 1 ); ?>><span><strong>آپلودهای جدید فقط WebP ذخیره شوند</strong><small>JPEG/PNG قبل از ثبت رسانه تبدیل و اصل آن حذف می‌شود. بدون نیاز به هدایت آدرس؛ بازگردانی اصل فقط از نسخهٔ خودتان ممکن است. این حالت بر گزینه‌های قدیمی زیر اولویت دارد. PNG متحرک یا تبدیل ناموفق با خطای آپلود متوقف می‌شود.</small></span></label>
       <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[automatic]" value="1" <?php checked( $settings['automatic'], 1 ); ?>><span><strong>فشرده‌سازی خودکار</strong><small>تصاویر جدید به WebP تبدیل شوند. روش WebP با حفظ اصل، فضای دیسک بیشتری مصرف می‌کند.</small></span></label>
       <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[auto_cleanup]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); ?>><span><strong>حذف خودکار اصل پس از آپلود</strong><small>حذف اصل فقط پس از بررسی موفق آدرس و زمان‌بندی وردپرس انجام می‌شود.</small></span></label>
       <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[cleanup_consent]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); ?>><span>برای تصاویر آینده بکاپ مستقل دارم و حذف غیرقابل‌بازگردانی اصل را می‌پذیرم.</span></label>

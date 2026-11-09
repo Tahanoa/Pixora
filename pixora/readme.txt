@@ -4,13 +4,15 @@ Tags: webp, images, optimization, media
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.7.1
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Persian image optimization and optional verified disk reclamation, with one-step and background workflows.
 
 == Description ==
+By default, new JPEG/PNG uploads through the standard WordPress upload/sideload path are converted before attachment registration. Only the validated WebP is retained; original JPEG/PNG is removed before success is returned. URLs and generated sizes start as WebP and need no redirects. Failed conversion rejects the upload; animated PNG is rejected in this mode, while existing WebP and other formats pass through. WordPress thumbnails and large-image scaled copies can still create multiple WebP files. Keep your own original; in-plugin restoration is unavailable. Disable WebP-only upload mode to use legacy upload settings. Existing attachments still require delivery verification before original deletion.
+
 Pixora converts JPEG/PNG to WebP. Same-format compression and automatic fallback have been removed. Original deletion requires verified WebP delivery; failed verification preserves originals.
 
 Convert JPEG and PNG uploads to WebP, preserve transparency, choose quality presets, process existing images, and optionally reclaim originals after verifying all legacy URLs. A standalone Persian RTL dashboard, per-image media controls, separate payload/disk savings, resumable batches, and support-report copying are included.
@@ -36,6 +38,8 @@ Only from your independent backup. In-plugin restoration is available before ori
 Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.8.0 =
+Add default WebP-only upload handling before attachment registration and thumbnail generation. Validate MIME and dimensions before removing newly uploaded JPEG/PNG. Protect colliding filenames, preserve transparent output, reject failed conversion, and expose a dedicated setting. Existing-media deletion safeguards remain intact.
 = 0.7.1 =
 Remove same-format engine, upload options, media controls and automatic fallback. Keep WebP-only conversion and verified original deletion. Disable legacy same-format automatic upload preferences until explicitly re-enabled for WebP.
 = 0.7.0 =

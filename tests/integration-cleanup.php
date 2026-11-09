@@ -5,7 +5,7 @@ define('WP_HTTP_BLOCK_EXTERNAL',true);define('WP_ACCESSIBLE_HOSTS','localhost');
 require '/var/www/html/wp-load.php';require_once ABSPATH.'wp-admin/includes/image.php';require_once ABSPATH.'wp-admin/includes/template.php';
 wp_set_current_user(1);
 function cleanup_check($ok,$text){if(!$ok)throw new RuntimeException($text);echo "PASS: $text\n";}
-update_option(Pixora::OPTION,array('automatic'=>0,'quality'=>82,'engine'=>'webp','auto_cleanup'=>0));
+update_option(Pixora::OPTION,array('upload_webp_only'=>0,'automatic'=>0,'quality'=>82,'engine'=>'webp','auto_cleanup'=>0));
 $ids=array();$posts=array();$extra=array();
 function cleanup_fixture($converted=true){
  $u=wp_upload_dir();$file=$u['path'].'/pixora-clean-'.uniqid().'.jpg';$im=imagecreatetruecolor(800,600);
@@ -96,7 +96,7 @@ try{
  $old_options=get_option(Pixora::OPTION,array());
  update_option(Pixora::OPTION,array('engine'=>'inplace','automatic'=>1,'inplace_consent'=>1));
  cleanup_check(!Pixora::options()['automatic'],'Legacy same-format preference does not silently enable WebP uploads');
- update_option(Pixora::OPTION,array('automatic'=>1,'auto_cleanup'=>1));
+ update_option(Pixora::OPTION,array('upload_webp_only'=>0,'automatic'=>1,'auto_cleanup'=>1));
  add_filter('pre_http_request',$block);
  $upload_metadata=wp_get_attachment_metadata($unselected);
  $upload_result=Pixora::on_upload($upload_metadata,$unselected);
