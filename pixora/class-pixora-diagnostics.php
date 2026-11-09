@@ -41,7 +41,7 @@ final class Pixora_Diagnostics {
   try {
    if ( 'inplace' === $mode ) { return Pixora_Inplace::optimize( $id ); }
    if ( 'optimize_reclaim' === $mode ) { return Pixora_Workflow::combined( $id ); }
-   if ( 'reclaim' === $mode ) { return Pixora_Storage::reclaim( $id ); }
+   if ( 'reclaim' === $mode ) { return Pixora_Workflow::reclaim( $id ); }
    if ( 'restore' === $mode ) { return Pixora::restore( $id ); }
    return Pixora::optimize( $id );
   } catch ( Throwable $error ) {

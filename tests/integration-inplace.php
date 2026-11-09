@@ -7,6 +7,8 @@ require '/var/www/html/wp-load.php';
 require_once ABSPATH . 'wp-admin/includes/image.php';
 require_once ABSPATH . 'wp-admin/includes/template.php';
 wp_set_current_user(1);
+// Test-only: allow the isolated static service through WordPress's private-host guard.
+add_filter('http_request_host_is_external',function($external,$host){return $host==='static'?true:$external;},10,2);
 function expect_disk($condition, $message) { if (!$condition) throw new RuntimeException($message); echo "PASS: $message\n"; }
 function fixture_disk($format) {
  $uploads = wp_upload_dir(); $path = $uploads['path'] . '/pixora-disk-' . uniqid() . '.' . $format;
@@ -14,6 +16,7 @@ function fixture_disk($format) {
  for ($y=0; $y<480; $y+=4) for ($x=0; $x<720; $x+=4) imagefilledrectangle($im, $x, $y, $x+3, $y+3, imagecolorallocatealpha($im, ($x*3)%256, ($y*5)%256, ($x+$y)%256, $format === 'png' ? ($x+$y)%128 : 0));
  if ($format === 'png') imagepng($im, $path, 0); else imagejpeg($im, $path, 100);
  imagedestroy($im);
+ $GLOBALS['disk_fixture_size'][$path]=filesize($path);
  $id = wp_insert_attachment(array('post_title'=>'Disk test', 'post_status'=>'inherit', 'post_mime_type'=>$format === 'png' ? 'image/png' : 'image/jpeg'), $path);
  wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $path));
  return array($id, $path);
@@ -39,17 +42,19 @@ foreach(array('jpg','png') as $format) {
  $pixels=$format==='png'?pixel_digest($path):null;
  $rules=dirname($path).'/.htaccess';
  $rules_before=is_file($rules)?file_get_contents($rules):null;
+ $served=Pixora_Storage::probe($url,$path);
+ expect_disk(!is_wp_error($served) && wp_remote_retrieve_response_code($served)===200 && wp_remote_retrieve_header($served,'content-type')===($format==='png'?'image/png':'image/jpeg'),'Reproduced exact HTTP 200 original-format response for '.$format);
  $preflight=Pixora_Storage::preflight($path);
  expect_disk(is_wp_error($preflight),'Reproduced: Nginx frontend ignores Apache image rules for '.$format);
  $block=function() { return new WP_Error('network_disabled','All outbound HTTP blocked for in-place test'); };
  add_filter('pre_http_request',$block);
  $force_format=function($formats){return array('image/jpeg'=>'image/webp','image/png'=>'image/webp');};
  add_filter('image_editor_output_format',$force_format,9999);
- $result=Pixora_Diagnostics::run($id,'inplace');
+ $result=Pixora_Diagnostics::run($id,'optimize_reclaim');
  remove_filter('image_editor_output_format',$force_format,9999);
  remove_filter('pre_http_request',$block);
  $after=disk_bytes($paths);
- expect_disk(!is_wp_error($result) && $result['freed']>0 && $after<$before,'Same-format optimization really reduces disk usage for '.$format);
+ expect_disk(!is_wp_error($result) && ($result['method']??'')==='inplace' && $result['freed']>0 && $after<$before,'Same-format optimization really reduces disk usage for '.$format);
  expect_disk($before-$after===$result['freed'],'Reported bytes match actual filesystem reduction for '.$format);
  expect_disk(get_attached_file($id)===$path && wp_get_attachment_url($id)===$url,'File path and public URL remain identical for '.$format);
  expect_disk(!get_post_meta($id,Pixora::BACKUP,true),'No WebP copy or restoration backup is created for '.$format);
@@ -68,9 +73,9 @@ foreach(array('jpg','png') as $format) {
 if (!defined('DOING_AJAX')) define('DOING_AJAX',true);
 class Disk_Ajax_End extends RuntimeException {}
 add_filter('wp_die_ajax_handler',function(){return function($message=''){if((string)$message==='-1')echo '-1';throw new Disk_Ajax_End();};});
-function disk_ajax($payload,$user=1,$valid=true){
+function disk_ajax($payload,$user=1,$valid=true,$batch=false){
  wp_set_current_user($user); $_POST=$payload; $_REQUEST=$payload; $_REQUEST['nonce']=$valid?wp_create_nonce('pixora_batch'):'bad';
- ob_start();try{Pixora::single();}catch(Disk_Ajax_End $end){}$raw=ob_get_clean();return json_decode($raw,true)??$raw;
+ ob_start();try{if($batch)Pixora::batch();else Pixora::single();}catch(Disk_Ajax_End $end){}$raw=ob_get_clean();return json_decode($raw,true)??$raw;
 }
 $author=wp_insert_user(array('user_login'=>'disk-author-'.uniqid(),'user_pass'=>wp_generate_password(32),'role'=>'author'));
 wp_update_post(array('ID'=>$ids[0],'post_author'=>$author));
@@ -85,9 +90,16 @@ $converted=Pixora_Diagnostics::run($legacy,'optimize');
 expect_disk(!is_wp_error($converted),'Existing WebP fixture created');
 $webp=get_attached_file($legacy);$webp_hash=hash_file('sha256',$webp);
 add_filter('upload_dir',$upload_filter);
-$result=Pixora_Diagnostics::run($legacy,'inplace');
-expect_disk(!is_wp_error($result) && $result['freed']>0 && file_exists($original),'Existing retained JPEG originals can also be reduced');
+$result=Pixora_Diagnostics::run($legacy,'reclaim');
+expect_disk(!is_wp_error($result) && ($result['method']??'')==='inplace' && $result['freed']>0 && file_exists($original),'Existing cleanup button automatically falls back and reduces retained originals');
 expect_disk(is_file($webp) && hash_file('sha256',$webp)===$webp_hash,'Previously published WebP URLs remain intact');
+// Actual browser endpoint must report real savings, not just a successful WebP conversion.
+list($smart_id,$smart_path)=fixture_disk('jpg');$ids[]=$smart_id;$smart_before=disk_bytes(disk_paths($smart_id));
+$smart=disk_ajax(array('mode'=>'optimize_reclaim','cursor'=>$smart_id-1,'consent'=>'delete-originals'),1,true,true);
+expect_disk($smart['success'] && $smart['data']['freed']>0 && $smart['data']['freed']===$smart_before-disk_bytes(disk_paths($smart_id)),'Combined AJAX action reports exact disk reduction after fallback');
+expect_disk($smart['data']['status']==='processed' && !$smart['data']['halt'] && strpos($smart['data']['message'],'هم‌فرمت')!==false,'Fallback is visible and does not halt on the obsolete routing error');
+$again=disk_ajax(array('id'=>$smart_id,'mode'=>'optimize_reclaim','consent'=>'delete-originals'));
+expect_disk(!$again['success'] && strpos($again['data']['message'],'۰ بایت')!==false,'Repeated smart operation reports zero gain rather than false success');
 // Persistence failure must never overwrite the only original.
 list($db_id,$db_file)=fixture_disk('jpg');$ids[]=$db_id;$db_hash=hash_file('sha256',$db_file);
 $deny_state=function($check,$object_id,$meta_key) { return $meta_key===Pixora_Inplace::META ? false : $check; };
@@ -104,6 +116,10 @@ foreach(disk_paths($ro_id) as $ro) chmod($ro,0644);
 update_option(Pixora::OPTION,array('automatic'=>1,'quality'=>72,'engine'=>'inplace','inplace_consent'=>1));
 list($auto,$auto_path)=fixture_disk('jpg');$ids[]=$auto;
 expect_disk(get_post_mime_type($auto)==='image/jpeg' && is_file($auto_path) && is_array(get_post_meta($auto,Pixora_Inplace::META,true)),'Upload follows same-format engine without WebP duplication');
+update_option(Pixora::OPTION,array('automatic'=>1,'quality'=>72,'engine'=>'webp','auto_cleanup'=>1,'inplace_consent'=>0));
+list($auto_smart,$auto_smart_path)=fixture_disk('jpg');$ids[]=$auto_smart;
+expect_disk(get_post_mime_type($auto_smart)==='image/jpeg' && !get_post_meta($auto_smart,Pixora::BACKUP,true) && filesize($auto_smart_path)<$GLOBALS['disk_fixture_size'][$auto_smart_path],'Automatic WebP cleanup falls back during upload and avoids extra WebP copies');
+expect_disk(get_post_meta($auto_smart,Pixora_Workflow::QUEUE,true)['state']==='fallback','Upload fallback records the actual disk-saving outcome');
 update_option(Pixora::OPTION,array('automatic'=>0,'quality'=>72,'engine'=>'inplace','inplace_consent'=>0));
 ob_start();Pixora::page();$page=ob_get_clean();
 expect_disk(strpos($page,'data-pixora="inplace"')!==false,'Dashboard exposes disk-compatible action');

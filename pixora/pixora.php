@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: کاهش فضای تصاویر با حفظ آدرس، بهینه‌سازی هم‌فرمت JPEG/PNG و تبدیل اختیاری WebP.
- * Version: 0.6.0
+ * Version: 0.6.1
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -66,8 +66,8 @@ final class Pixora {
  }
  public static function sanitize( $input ) {
   $input = is_array( $input ) ? $input : array();
-  $cleanup = ! empty( $input['automatic'] ) && ! empty( $input['auto_cleanup'] ) && ! empty( $input['cleanup_consent'] ) && Pixora_Storage::host()['supported'];
-  if ( ! empty( $input['auto_cleanup'] ) && ! $cleanup && function_exists( 'add_settings_error' ) ) { add_settings_error( self::OPTION, 'cleanup_consent', 'آزادسازی خودکار فعال نشد؛ فشرده‌سازی خودکار، تأیید بکاپ و هاست سازگار لازم است.', 'warning' ); }
+  $cleanup = ! empty( $input['automatic'] ) && ! empty( $input['auto_cleanup'] ) && ! empty( $input['cleanup_consent'] );
+  if ( ! empty( $input['auto_cleanup'] ) && ! $cleanup && function_exists( 'add_settings_error' ) ) { add_settings_error( self::OPTION, 'cleanup_consent', 'آزادسازی خودکار فعال نشد؛ فشرده‌سازی خودکار و تأیید بکاپ لازم است.', 'warning' ); }
   $engine = isset( $input['engine'] ) && 'inplace' === $input['engine'] ? 'inplace' : 'webp';
   $inplace_consent = ! empty( $input['inplace_consent'] );
   if ( 'inplace' === $engine ) { $cleanup = false; }
@@ -89,10 +89,13 @@ final class Pixora {
   if ( self::options()['automatic'] && ! get_post_meta( $id, self::BACKUP, true ) ) {
    if ( self::options()['auto_cleanup'] ) {
     $check = Pixora_Storage::preflight( get_attached_file( $id ) );
-    if ( is_wp_error( $check ) ) {
-     update_post_meta( $id, Pixora_Workflow::QUEUE, array( 'state' => 'failed', 'message' => $check->get_error_message() ) );
-     return $metadata;
+    if ( Pixora_Workflow::can_fallback( $check ) ) {
+     wp_update_attachment_metadata( $id, $metadata );
+     $fallback = Pixora_Workflow::fallback( $id, $check );
+     if ( is_wp_error( $fallback ) ) { update_post_meta( $id, Pixora_Workflow::QUEUE, array( 'state' => 'no_gain' === $fallback->get_error_code() ? 'unchanged' : 'failed', 'message' => $fallback->get_error_message() ) ); }
+     return wp_get_attachment_metadata( $id );
     }
+    if ( is_wp_error( $check ) ) { return $metadata; }
    }
    $result = self::optimize( $id, $metadata );
    if ( ! is_wp_error( $result ) ) { Pixora_Workflow::enqueue( $id ); return $result; }
@@ -259,14 +262,16 @@ final class Pixora {
   $backup = get_post_meta( $id, self::BACKUP, true );
   $status = 'processed';
   $message = is_wp_error( $result ) ? $result->get_error_message() : 'عملیات با موفقیت انجام شد.';
-  if ( 'inplace' === $mode && ! is_wp_error( $result ) ) {
+  if ( ! is_wp_error( $result ) && ( 'inplace' === $mode || ( $result['method'] ?? '' ) === 'inplace' ) ) {
    $status = $result['freed'] > 0 ? ( $result['issues'] ? 'partial' : 'processed' ) : ( $result['issues'] ? 'failed' : 'skipped' );
    $message = $result['freed'] > 0 ? 'فایل‌های کوچک‌تر جایگزین شدند؛ ' . size_format( $result['freed'] ) . ' فضای واقعی آزاد شد. نام و فرمت ثابت ماند.' : 'نسخهٔ کوچک‌تر قابل جایگزینی پیدا نشد؛ فایل‌ها بزرگ‌تر نشدند.';
-   if ( $result['issues'] ) { $message .= ' ' . implode( '؛ ', array_slice( $result['issues'], 0, 3 ) ); }
+   if ( ! empty( $result['message'] ) ) { $message = $result['message']; }
+   elseif ( $result['issues'] ) { $message .= ' ' . implode( '؛ ', array_slice( $result['issues'], 0, 3 ) ); }
   }
+  if ( ! is_wp_error( $result ) && ( $result['method'] ?? '' ) === 'webp' ) { $message = $result['message']; if ( ! empty( $result['remaining'] ) ) { $status = 'partial'; } }
   if ( is_wp_error( $result ) ) {
    $code = $result->get_error_code();
-   $status = 'cleanup_pending' === $code ? 'partial' : ( in_array( $code, array( 'done', 'format', 'no_saving', 'state', 'animated' ), true ) ? 'skipped' : 'failed' );
+   $status = 'cleanup_pending' === $code ? 'partial' : ( in_array( $code, array( 'done', 'format', 'no_saving', 'no_gain', 'state', 'animated' ), true ) ? 'skipped' : 'failed' );
   }
   wp_send_json_success( array( 'done' => false, 'cursor' => $id, 'halt' => Pixora_Workflow::should_pause( $result ), 'status' => $status, 'message' => $message, 'saved' => ! is_wp_error( $result ) && 'optimize' === $mode && $backup ? max( 0, $backup['before'] - $backup['after'] ) : 0, 'freed' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim', 'inplace' ), true ) ? $result['freed'] : 0, 'remaining' => ! is_wp_error( $result ) && in_array( $mode, array( 'reclaim', 'optimize_reclaim', 'inplace' ), true ) ? ( $result['remaining'] ?? 0 ) : 0 ) );
  }
@@ -284,15 +289,17 @@ final class Pixora {
     $html .= '<br><span>فضای آزادشده: ' . esc_html( size_format( $backup['disk_freed'] ?? 0 ) ) . '</span>';
     if ( ! empty( $backup['remaining_originals'] ) ) { $html .= '<br><span>بخشی از فایل‌های اصلی حذف نشده؛ نیازمند بررسی پشتیبانی هاست.</span>'; }
    } else {
-    $html .= '<br><span>نسخهٔ JPEG/PNG هنوز موجود است.</span>';
+    $main_record = is_array( $inplace ) ? ( $inplace['files'][ sha1( _wp_relative_upload_path( $backup['file'] ) ) ] ?? array() ) : array();
+    $replaced = ( $main_record['state'] ?? '' ) === 'done' && ( $main_record['after'] ?? 0 ) < ( $main_record['before'] ?? 0 );
+    $html .= '<br><span>' . esc_html( $replaced ? 'نسخهٔ بزرگ قبلی جایگزین شد؛ نام JPEG/PNG برای سالم‌ماندن آدرس باقی است.' : 'نسخهٔ JPEG/PNG هنوز موجود است.' ) . '</span>';
     if ( current_user_can( 'manage_options' ) ) {
-     $html .= self::media_control( $post->ID, 'reclaim', 'حذف اصل و آزادسازی فضا' );
+     $html .= self::media_control( $post->ID, 'reclaim', 'آزادسازی هوشمند فضا' );
      $html .= self::media_control( $post->ID, 'restore', 'بازگشت به JPEG/PNG' );
     }
    }
   } elseif ( 'image/webp' !== $post->post_mime_type ) {
    $html .= self::media_control( $post->ID, 'optimize', 'فشرده‌سازی با Pixora' );
-   if ( current_user_can( 'manage_options' ) ) { $html .= self::media_control( $post->ID, 'optimize_reclaim', 'فشرده‌سازی و حذف اصل' ); }
+   if ( current_user_can( 'manage_options' ) ) { $html .= self::media_control( $post->ID, 'optimize_reclaim', 'فشرده‌سازی و آزادسازی هوشمند' ); }
   } else { return ''; }
   $queue = get_post_meta( $post->ID, Pixora_Workflow::QUEUE, true );
   if ( $queue && ! empty( $queue['message'] ) && empty( $backup['reclaimed'] ) ) { $html .= '<br><small>' . esc_html( $queue['message'] ) . '</small>'; }
@@ -326,14 +333,15 @@ final class Pixora {
   $backup = get_post_meta( $id, self::BACKUP, true );
   $message = 'عملیات انجام شد. برای مشاهدهٔ آخرین وضعیت، صفحه یا جزئیات تصویر را تازه کنید.';
   if ( 'inplace' === $mode ) { $message = 'فضای واقعی آزادشده: ' . size_format( $result['freed'] ) . ( $result['issues'] ? '؛ ' . implode( '؛ ', array_slice( $result['issues'], 0, 3 ) ) : '؛ فایل‌های فاقد بهبود بدون تغییر ماندند.' ); }
+  if ( ! empty( $result['message'] ) ) { $message = $result['message']; }
   wp_send_json_success( array( 'message' => $message, 'html' => self::media_button( get_post( $id ) ) ) );
  }
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
   if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'pixora_page_pixora-gallery', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.6.0' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.6.0', true );
-  if ( 'pixora_page_pixora-gallery' === $hook ) { wp_enqueue_script( 'pixora-gallery', plugins_url( 'assets/gallery.js', __FILE__ ), array( 'pixora' ), '0.6.0', true ); }
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.6.1' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.6.1', true );
+  if ( 'pixora_page_pixora-gallery' === $hook ) { wp_enqueue_script( 'pixora-gallery', plugins_url( 'assets/gallery.js', __FILE__ ), array( 'pixora' ), '0.6.1', true ); }
   wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'modeOptimize' => 'فشرده‌سازی تصاویر', 'modeRestore' => 'بازگردانی تصاویر', 'modeReclaim' => 'حذف اصل تصاویر', 'modeCombined' => 'فشرده‌سازی و آزادسازی', 'modeInplace' => 'کاهش دیسک با حفظ فرمت', 'failedCount' => 'ناموفق', 'partialCount' => 'انجام بخشی از عملیات', 'copied' => 'گزارش کپی شد', 'copyFailed' => 'کپی خودکار ممکن نشد؛ متن گزارش را انتخاب و کپی کنید.', 'deleteConfirm' => 'نسخهٔ قبلی جایگزین یا حذف می‌شود و بازگردانی کیفیت قبلی فقط با بکاپ مستقل ممکن است. ادامه می‌دهید؟', 'resume' => 'ادامهٔ پردازش از آخرین تصویر تأییدشده', 'restart' => 'شروع دوباره از ابتدا', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
@@ -346,9 +354,9 @@ final class Pixora {
   foreach ( $inplace_rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $inplace_disk += Pixora_Inplace::total( $data ); } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۶.۰ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۶.۱ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
-   <section class="pixora-note"><strong>وضعیت آپلودهای جدید: <?php echo esc_html( $settings['automatic'] && ( 'webp' === $settings['engine'] || $settings['inplace_consent'] ) ? 'پردازش خودکار فعال است' : 'پردازش خودکار فعال نیست' ); ?></strong><p><?php echo esc_html( 'inplace' === $settings['engine'] ? 'روش حفظ فرمت: ابتدا نسخهٔ کوچک‌تر ساخته و اعتبارسنجی می‌شود و سپس اتمی جای فایل قبلی قرار می‌گیرد؛ کپی دائمی جدید ایجاد نمی‌شود.' : ( $settings['auto_cleanup'] ? 'روش WebP: نسخهٔ جدید ساخته می‌شود؛ اصل فقط پس از بررسی موفق آدرس‌ها و اجرای زمان‌بندی حذف می‌شود، در غیر این صورت باقی می‌ماند.' : 'روش WebP با حفظ اصل: اصل و WebP هر دو نگهداری می‌شوند و مصرف دیسک می‌تواند بیشتر شود.' ) ); ?> اندازه‌های بندانگشتی وردپرس جداگانه تولید می‌شوند.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=pixora-gallery' ) ); ?>">گالری و شناسایی تصاویر تکراری</a></section>
+   <section class="pixora-note"><strong>وضعیت آپلودهای جدید: <?php echo esc_html( $settings['automatic'] && ( 'webp' === $settings['engine'] || $settings['inplace_consent'] ) ? 'پردازش خودکار فعال است' : 'پردازش خودکار فعال نیست' ); ?></strong><p><?php echo esc_html( 'inplace' === $settings['engine'] ? 'روش حفظ فرمت: ابتدا نسخهٔ کوچک‌تر ساخته و اعتبارسنجی می‌شود و سپس اتمی جای فایل قبلی قرار می‌گیرد؛ کپی دائمی جدید ایجاد نمی‌شود.' : ( $settings['auto_cleanup'] ? 'روش WebP: نسخهٔ جدید ساخته می‌شود؛ اگر هدایت تأیید نشود، روش هم‌فرمت خودکار جایگزین می‌شود؛ کاهش خالص حجم در گزارش مشخص است.' : 'روش WebP با حفظ اصل: اصل و WebP هر دو نگهداری می‌شوند و مصرف دیسک می‌تواند بیشتر شود.' ) ); ?> اندازه‌های بندانگشتی وردپرس جداگانه تولید می‌شوند.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=pixora-gallery' ) ); ?>">گالری و شناسایی تصاویر تکراری</a></section>
 
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">
@@ -357,12 +365,12 @@ final class Pixora {
     <div class="pixora-stat"><span>درصد کاهش حجم</span><strong><?php echo esc_html( number_format_i18n( $before ? 100 * ( $before - $after ) / $before : 0, 1 ) ); ?>٪</strong><small>نسبت به نسخه‌های اصلی</small></div>
    </section>
    <section class="pixora-card pixora-storage"><h2>کاهش واقعی فضای دیسک</h2><p><strong>روش پیشنهادی برای هاست شما:</strong> فایل کوچک‌تر با همان فرمت و آدرس جای فایل قبلی می‌نشیند. نیازی به هدایت یا تغییر تنظیم وب‌سرور ندارد؛ WebP جدید نمی‌سازد.</p><p>فضای آزادشده با حفظ فرمت: <strong><?php echo esc_html( size_format( $inplace_disk ) ); ?></strong></p>
-    <p>وب‌سرور شناسایی‌شده: <strong><?php echo esc_html( $host['name'] ); ?></strong> · فضای آزادشدهٔ ثبت‌شده: <strong><?php echo esc_html( size_format( $disk ) ); ?></strong></p>
+    <p>وب‌سرور شناسایی‌شده: <strong><?php echo esc_html( $host['name'] ); ?></strong> · حجم فایل‌های حذف‌شده در روش WebP: <strong><?php echo esc_html( size_format( $disk ) ); ?></strong></p>
     <p class="pixora-muted">با یک دکمه تصاویر جدید و قبلی را بهینه و اصل آن‌ها را آزاد کنید. برای هر تصویر، هدایت آدرس‌های قدیمی به WebP تنظیم و با درخواست واقعی آزمایش می‌شود؛ در صورت شکست بررسی، فایل اصلی حفظ می‌شود. تشخیص نوع وب‌سرور به‌تنهایی تأیید سازگاری نیست.</p>
-    <?php if ( ! $host['supported'] ) : ?><p id="pixora-storage-reason" class="pixora-storage-warning">روش حذف با WebP غیرفعال است؛ روش حفظ فرمت بالاتر قابل استفاده است: هاست سازگار با هدایت خودکار آدرس‌ها تشخیص داده نشد. برای حفظ تصاویر سایت، در Nginx یا هاست ناشناخته اصل تصاویر حذف نمی‌شود. پشتیبانی هاست باید امکان استفاده از قواعد ‎.htaccess را بررسی کند.</p><?php endif; ?>
+    <?php if ( ! $host['supported'] ) : ?><p id="pixora-storage-reason" class="pixora-storage-warning">هدایت خودکار WebP روی این هاست تأیید نشده است؛ آزادسازی هوشمند از روش حفظ فرمت استفاده می‌کند: هاست سازگار با هدایت خودکار آدرس‌ها تشخیص داده نشد. روش هم‌فرمت بدون تغییر تنظیم وب‌سرور اجرا می‌شود؛ نام و آدرس JPEG/PNG باقی می‌ماند ولی نسخهٔ بزرگ قبلی در صورت وجود خروجی کوچک‌تر جایگزین می‌شود.</p><?php endif; ?>
     <label class="pixora-toggle"><input type="checkbox" id="pixora-cleanup-consent"><span>بکاپ مستقل دارم و جایگزینی یا حذف نسخهٔ قبلی را می‌پذیرم؛ بازگردانی کیفیت قبلی فقط با بکاپ ممکن است.</span></label>
-    <p><button type="button" class="button button-primary" data-pixora="inplace">کاهش فضای دیسک با حفظ فرمت و آدرس</button></p><h3>روش جایگزین: تبدیل WebP و حذف اصل (وابسته به هاست)</h3>
-    <p><button type="button" class="button" data-pixora="optimize_reclaim" <?php if ( ! $host['supported'] ) : ?>disabled data-pixora-unavailable="true" aria-describedby="pixora-storage-reason"<?php endif; ?>>فشرده‌سازی و حذف اصل در یک مرحله</button></p>
+    <p><button type="button" class="button button-primary" data-pixora="inplace">کاهش فضای دیسک با حفظ فرمت و آدرس</button></p><h3>آزادسازی هوشمند: WebP یا جایگزینی هم‌فرمت به‌صورت خودکار</h3>
+    <p><button type="button" class="button" data-pixora="optimize_reclaim" >فشرده‌سازی و آزادسازی هوشمند (با روش جایگزین خودکار)</button></p>
     <p class="pixora-muted">قواعد هدایت در پوشهٔ تصاویر باقی می‌مانند و به فعال بودن افزونه وابسته نیستند؛ هنگام مهاجرت یا بازیابی، فایل‌های مخفی ‎.htaccess را هم منتقل کنید. حذف یا تغییر این قواعد می‌تواند لینک‌های قدیمی را خراب کند. تصاویر تازه‌بهینه‌شده، نسخهٔ اولیهٔ بزرگ وردپرس را هم پوشش می‌دهند؛ در بهینه‌سازی‌های نسخه‌های قدیمی، فایل‌های فاقد نگاشت حفظ می‌شوند.</p>
    </section>
    <div class="pixora-layout">
@@ -371,8 +379,8 @@ final class Pixora {
       <p><label for="pixora-engine">روش پردازش آپلودهای جدید</label> <select id="pixora-engine" name="pixora_settings[engine]"><option value="inplace" <?php selected( $settings['engine'], 'inplace' ); ?>>کاهش دیسک با همان فرمت و آدرس</option><option value="webp" <?php selected( $settings['engine'], 'webp' ); ?>>ساخت نسخهٔ WebP</option></select></p>
       <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[inplace_consent]" value="1" <?php checked( $settings['inplace_consent'], 1 ); ?>><span>بکاپ مستقل دارم و جایگزینی خودکار JPEG/PNG با نسخهٔ کوچک‌تر را می‌پذیرم.</span></label>
       <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[automatic]" value="1" <?php checked( $settings['automatic'], 1 ); ?>><span><strong>فشرده‌سازی خودکار</strong><small>تصاویر جدید با روش انتخاب‌شده پردازش شوند. روش WebP با حفظ اصل، فضای دیسک بیشتری مصرف می‌کند.</small></span></label>
-      <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[auto_cleanup]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); disabled( ! $host['supported'] ); ?>><span><strong>آزادسازی خودکار پس از آپلود</strong><small>پس از تبدیل موفق، حذف اصل با زمان‌بندی وردپرس و پس از بررسی آدرس انجام شود؛ نیازمند فعال بودن فشرده‌سازی خودکار است.</small></span></label>
-      <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[cleanup_consent]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); disabled( ! $host['supported'] ); ?>><span>برای تصاویر آینده بکاپ مستقل دارم و حذف غیرقابل‌بازگردانی اصل را می‌پذیرم.</span></label>
+      <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[auto_cleanup]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); ?>><span><strong>آزادسازی هوشمند خودکار پس از آپلود</strong><small>اگر WebP قابل جایگزینی نباشد، فایل هم‌فرمت کوچک‌تر جایگزین می‌شود؛ در مسیر WebP، حذف پس از بررسی آدرس و زمان‌بندی وردپرس انجام می‌شود.</small></span></label>
+      <label class="pixora-toggle"><input type="checkbox" name="pixora_settings[cleanup_consent]" value="1" <?php checked( $settings['auto_cleanup'], 1 ); ?>><span>برای تصاویر آینده بکاپ مستقل دارم و حذف غیرقابل‌بازگردانی اصل را می‌پذیرم.</span></label>
       <div class="pixora-quality"><label for="pixora-quality">کیفیت تصویر</label><input id="pixora-quality" type="number" name="pixora_settings[quality]" min="1" max="100" required value="<?php echo esc_attr( $settings['quality'] ); ?>"><div class="pixora-presets"><button type="button" class="button" data-pixora-quality="70">حجم کمتر · ۷۰</button><button type="button" class="button" data-pixora-quality="82">متعادل · ۸۲</button><button type="button" class="button" data-pixora-quality="92">کیفیت بالاتر · ۹۲</button></div><p class="pixora-muted">از ۱ تا ۱۰۰؛ مقدار پیشنهادی ۸۲ است. این تنظیم برای تبدیل‌های بعدی اعمال می‌شود.</p></div>
       <?php submit_button( 'ذخیرهٔ تنظیمات', 'primary', 'submit', true ); ?>
      </form>
