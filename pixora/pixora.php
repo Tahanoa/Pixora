@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pixora
  * Description: کاهش فضای تصاویر با حفظ آدرس، بهینه‌سازی هم‌فرمت JPEG/PNG و تبدیل اختیاری WebP.
- * Version: 0.5.0
+ * Version: 0.6.0
  * Author: tahanoa
  * Author URI: https://github.com/Tahanoa
  * Requires at least: 6.5
@@ -17,6 +17,7 @@ require_once __DIR__ . '/class-pixora-storage.php';
 require_once __DIR__ . '/class-pixora-diagnostics.php';
 require_once __DIR__ . '/class-pixora-workflow.php';
 require_once __DIR__ . '/class-pixora-inplace.php';
+require_once __DIR__ . '/class-pixora-gallery.php';
 
 final class Pixora {
  const BACKUP = '_pixora_original';
@@ -25,6 +26,7 @@ final class Pixora {
  public static function init() {
   add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'on_upload' ), 20, 2 );
   add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
+  Pixora_Gallery::init();
   add_action( 'admin_init', array( __CLASS__, 'settings' ) );
   add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
   add_action( 'wp_ajax_pixora_batch', array( __CLASS__, 'batch' ) );
@@ -328,9 +330,10 @@ final class Pixora {
  }
  public static function menu() { add_menu_page( 'Pixora | بهینه‌سازی تصاویر', 'Pixora', 'manage_options', 'pixora', array( __CLASS__, 'page' ), 'dashicons-format-image', 58 ); }
  public static function assets( $hook ) {
-  if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
-  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.5.0' );
-  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.5.0', true );
+  if ( ! in_array( $hook, array( 'toplevel_page_pixora', 'pixora_page_pixora-gallery', 'upload.php', 'post.php', 'post-new.php' ), true ) ) { return; }
+  wp_enqueue_style( 'pixora', plugins_url( 'assets/admin.css', __FILE__ ), array(), '0.6.0' );
+  wp_enqueue_script( 'pixora', plugins_url( 'assets/admin.js', __FILE__ ), array(), '0.6.0', true );
+  if ( 'pixora_page_pixora-gallery' === $hook ) { wp_enqueue_script( 'pixora-gallery', plugins_url( 'assets/gallery.js', __FILE__ ), array( 'pixora' ), '0.6.0', true ); }
   wp_localize_script( 'pixora', 'pixora', array( 'url' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'pixora_batch' ), 'finished' => 'پردازش تمام شد', 'failed' => 'درخواست ناموفق بود؛ دوباره تلاش کنید.', 'working' => 'در حال فشرده‌سازی…', 'optimized' => '✓ فشرده‌شده با Pixora', 'stopped' => 'پردازش متوقف شد', 'processed' => 'انجام‌شده', 'skipped' => 'بدون تغییر', 'saved' => 'مگابایت کاهش حجم', 'freed' => 'مگابایت فضای آزادشده', 'remaining' => 'فایل اصلی حذف‌نشده', 'modeOptimize' => 'فشرده‌سازی تصاویر', 'modeRestore' => 'بازگردانی تصاویر', 'modeReclaim' => 'حذف اصل تصاویر', 'modeCombined' => 'فشرده‌سازی و آزادسازی', 'modeInplace' => 'کاهش دیسک با حفظ فرمت', 'failedCount' => 'ناموفق', 'partialCount' => 'انجام بخشی از عملیات', 'copied' => 'گزارش کپی شد', 'copyFailed' => 'کپی خودکار ممکن نشد؛ متن گزارش را انتخاب و کپی کنید.', 'deleteConfirm' => 'نسخهٔ قبلی جایگزین یا حذف می‌شود و بازگردانی کیفیت قبلی فقط با بکاپ مستقل ممکن است. ادامه می‌دهید؟', 'resume' => 'ادامهٔ پردازش از آخرین تصویر تأییدشده', 'restart' => 'شروع دوباره از ابتدا', 'consent' => 'ابتدا تأیید کنید که بکاپ مستقل دارید و اصل تصاویر قابل بازگردانی نخواهد بود.' ) );
  }
  public static function page() {
@@ -343,8 +346,10 @@ final class Pixora {
   foreach ( $inplace_rows as $row ) { $data = maybe_unserialize( $row ); if ( is_array( $data ) ) { $inplace_disk += Pixora_Inplace::total( $data ); } }
   ?>
   <div class="wrap pixora-app" dir="rtl" lang="fa">
-   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۵.۰ · ساختهٔ tahanoa</span></header>
+   <header class="pixora-hero"><div><span class="pixora-eyebrow">تصاویر سبک‌تر، تجربهٔ سریع‌تر</span><h1>Pixora <span>پیکسورا</span></h1><p>بهینه‌سازی تصاویر و آزادسازی اختیاری فضای دیسک؛ همه‌چیز در کنترل شماست.</p></div><span class="pixora-version">نسخهٔ ۰.۶.۰ · ساختهٔ tahanoa</span></header>
    <?php settings_errors( self::OPTION ); ?>
+   <section class="pixora-note"><strong>وضعیت آپلودهای جدید: <?php echo esc_html( $settings['automatic'] && ( 'webp' === $settings['engine'] || $settings['inplace_consent'] ) ? 'پردازش خودکار فعال است' : 'پردازش خودکار فعال نیست' ); ?></strong><p><?php echo esc_html( 'inplace' === $settings['engine'] ? 'روش حفظ فرمت: ابتدا نسخهٔ کوچک‌تر ساخته و اعتبارسنجی می‌شود و سپس اتمی جای فایل قبلی قرار می‌گیرد؛ کپی دائمی جدید ایجاد نمی‌شود.' : ( $settings['auto_cleanup'] ? 'روش WebP: نسخهٔ جدید ساخته می‌شود؛ اصل فقط پس از بررسی موفق آدرس‌ها و اجرای زمان‌بندی حذف می‌شود، در غیر این صورت باقی می‌ماند.' : 'روش WebP با حفظ اصل: اصل و WebP هر دو نگهداری می‌شوند و مصرف دیسک می‌تواند بیشتر شود.' ) ); ?> اندازه‌های بندانگشتی وردپرس جداگانه تولید می‌شوند.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=pixora-gallery' ) ); ?>">گالری و شناسایی تصاویر تکراری</a></section>
+
    <?php if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) : ?><div class="notice notice-error inline"><p>برای تبدیل تصاویر، پشتیبانی WebP را در GD یا Imagick سرور فعال کنید.</p></div><?php endif; ?>
    <section class="pixora-stats" aria-label="آمار بهینه‌سازی">
     <div class="pixora-stat"><span>تصاویر بهینه‌شده</span><strong><?php echo esc_html( number_format_i18n( $count ) ); ?></strong><small>پیوست در کتابخانهٔ رسانه</small></div>
