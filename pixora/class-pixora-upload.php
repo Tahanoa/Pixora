@@ -2,6 +2,24 @@
 /** Convert a newly uploaded file before WordPress publishes its URL or creates sizes. */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 final class Pixora_Upload {
+ public static function browser_settings( $settings ) {
+  if ( Pixora::options()['upload_webp_only'] && Pixora::options()['browser_upload'] ) {
+   if ( ! isset( $settings['filters'] ) || ! is_array( $settings['filters'] ) ) { $settings['filters'] = array(); }
+   // Permit a larger local source, but keep the host's limit for encoded uploads.
+   $limit = $settings['filters']['max_file_size'] ?? wp_max_upload_size();
+   $settings['filters']['pixora_webp'] = array( 'max_file_size' => $limit );
+   $settings['filters']['max_file_size'] = 64 * 1024 * 1024;
+  }
+  return $settings;
+ }
+ public static function browser_assets() {
+  if ( ! current_user_can( 'upload_files' ) || ! Pixora::options()['upload_webp_only'] || ! Pixora::options()['browser_upload'] ) { return; }
+  wp_enqueue_style( 'pixora-browser', plugins_url( 'assets/browser-upload.css', __FILE__ ), array(), '0.9.0' );
+  wp_enqueue_script( 'pixora-codec', plugins_url( 'assets/browser-codec.js', __FILE__ ), array(), '0.9.0', true );
+  wp_enqueue_script( 'pixora-browser', plugins_url( 'assets/browser-upload.js', __FILE__ ), array( 'plupload', 'pixora-codec' ), '0.9.0', true );
+  wp_localize_script( 'pixora-browser', 'pixoraBrowser', array( 'enabled' => true, 'quality' => Pixora::options()['quality'], 'worker' => plugins_url( 'assets/browser-worker.js', __FILE__ ) . '?ver=0.9.0' ) );
+ }
+
  public static function handle( $upload, $context = 'upload' ) {
   if ( ! Pixora::options()['upload_webp_only'] || ! empty( $upload['error'] ) || empty( $upload['file'] ) ) { return $upload; }
   $source = $upload['file'];
