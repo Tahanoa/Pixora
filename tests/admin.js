@@ -66,15 +66,6 @@ const json = data => ({ status: 200, text: JSON.stringify({ success: true, data 
  queue = [json({ done: true })];
  await combined.listeners.click();
  assert.equal(payloads.at(-1).cursor, haltedCursor);
- elements['pixora-cleanup-consent'].checked = false;
- const inplaceBefore = payloads.length;
- await inplace.listeners.click();
- assert.equal(payloads.length, inplaceBefore);
- elements['pixora-cleanup-consent'].checked = true;
- queue = [json({ cursor: 50, status: 'processed', freed: 123456, saved: 0, message: 'disk reduced' }), json({ done: true })];
- await inplace.listeners.click();
- assert.equal(payloads.at(-1).mode, 'inplace');
- assert.equal(payloads.at(-1).consent, 'delete-originals');
  const resultNode = node({});
  const sibling = node({}); sibling.textContent = 'other action';
  const media = node({ pixoraId: '42', pixoraMode: 'optimize_reclaim' });

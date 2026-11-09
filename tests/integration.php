@@ -147,7 +147,7 @@ $block_probe = function() { return new WP_Error('test_probe', 'Intentional local
 add_filter('pre_http_request', $block_probe);
 $failed = Pixora_Diagnostics::run($retry_id, 'optimize_reclaim');
 remove_filter('pre_http_request', $block_probe);
-verify(!is_wp_error($failed) && $failed['method'] === 'inplace' && $failed['freed'] > 0 && file_exists($retry_original) && get_post_mime_type($retry_id) === 'image/webp', 'Probe failure automatically reduces retained originals without deleting published WebP');
+verify(is_wp_error($failed) && file_exists($retry_original) && get_post_mime_type($retry_id) === 'image/webp', 'Probe failure preserves originals without same-format fallback');
 $generated_before = get_post_meta($retry_id, Pixora::BACKUP, true)['generated'];
 $retry = Pixora_Diagnostics::run($retry_id, 'optimize_reclaim');
 verify(!is_wp_error($retry) && !file_exists($retry_original) && get_post_meta($retry_id, Pixora::BACKUP, true)['generated'] === $generated_before, 'Retry reuses existing WebP without redundant conversion');
@@ -157,7 +157,7 @@ $rules_before = file_get_contents($rule_path);
 add_filter('pre_http_request', $block_probe);
 $blocked = Pixora_Diagnostics::run($blocked_id, 'optimize_reclaim');
 remove_filter('pre_http_request', $block_probe);
-verify(!is_wp_error($blocked) && $blocked['method'] === 'inplace' && $blocked['freed'] > 0 && !get_post_meta($blocked_id, Pixora::BACKUP, true) && get_post_mime_type($blocked_id) === 'image/jpeg', 'Failed preflight reduces same-format originals without generating WebP copies');
+verify(is_wp_error($blocked) && !get_post_meta($blocked_id, Pixora::BACKUP, true) && get_post_mime_type($blocked_id) === 'image/jpeg', 'Failed preflight preserves originals without generating WebP copies');
 verify(file_exists($blocked_original) && file_get_contents($rule_path) === $rules_before && !glob(dirname($blocked_original) . '/pixora-probe-*'), 'Failed preflight preserves image and prior rules and removes probe files');
 deactivate_plugins('pixora/pixora.php');
 $response = wp_remote_get($legacy_url);

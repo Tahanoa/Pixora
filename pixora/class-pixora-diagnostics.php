@@ -37,12 +37,12 @@ final class Pixora_Diagnostics {
   if ( ! headers_sent() ) { wp_send_json_error( array( 'message' => $message, 'id' => self::$context['id'] ), 500 ); }
  }
  public static function run( $id, $mode ) {
+  if ( ! in_array( $mode, array( 'optimize', 'restore', 'reclaim', 'optimize_reclaim', 'webp_delete', 'preview_webp_cleanup', 'purge_webp' ), true ) ) { return new WP_Error( 'mode', 'عملیات نامعتبر است.' ); }
   self::begin( $id, $mode );
   try {
    if ( 'preview_webp_cleanup' === $mode ) { return Pixora_Webp_Cleanup::plan( $id ); }
    if ( 'purge_webp' === $mode ) { return Pixora_Webp_Cleanup::purge( $id ); }
    if ( 'webp_delete' === $mode ) { return Pixora_Workflow::strict( $id ); }
-   if ( 'inplace' === $mode ) { return Pixora_Inplace::optimize( $id ); }
    if ( 'optimize_reclaim' === $mode ) { return Pixora_Workflow::combined( $id ); }
    if ( 'reclaim' === $mode ) { return Pixora_Workflow::reclaim( $id ); }
    if ( 'restore' === $mode ) { return Pixora::restore( $id ); }

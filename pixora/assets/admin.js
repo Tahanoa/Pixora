@@ -41,7 +41,7 @@
   event.stopPropagation();
   if (button.disabled) return;
   const mode = button.dataset.pixoraMode || 'optimize';
-  const destructive = ['reclaim', 'optimize_reclaim', 'inplace'].includes(mode);
+  const destructive = ['reclaim', 'optimize_reclaim'].includes(mode);
   if (destructive && !window.confirm(pixora.deleteConfirm)) return;
   const label = button.textContent;
   const container = button.closest('.pixora-media-tools');
@@ -78,7 +78,7 @@
   catch { copy.textContent = pixora.copyFailed; }
  });
  reset?.addEventListener('click', () => {
-  ['optimize', 'restore', 'reclaim', 'optimize_reclaim', 'inplace', 'webp_delete', 'preview_webp_cleanup', 'purge_webp'].forEach(mode => saveJob(mode, null));
+  ['optimize', 'restore', 'reclaim', 'optimize_reclaim', 'webp_delete', 'preview_webp_cleanup', 'purge_webp'].forEach(mode => saveJob(mode, null));
   progress.textContent = 'پیشرفت ذخیره‌شده پاک شد؛ عملیات بعدی از ابتدا شروع می‌شود.';
  });
  stop.addEventListener('click', () => { stopped = true; stop.disabled = true; });
@@ -86,8 +86,8 @@
   const mode = button.dataset.pixora;
   const preview = mode === 'preview_webp_cleanup';
   const purge = mode === 'purge_webp';
-  const reclaim = ['reclaim', 'optimize_reclaim', 'inplace', 'webp_delete', 'purge_webp'].includes(mode);
-  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined, inplace: pixora.modeInplace, webp_delete: pixora.modeStrict, purge_webp: pixora.modePurge, preview_webp_cleanup: pixora.modePreview }[mode];
+  const reclaim = ['reclaim', 'optimize_reclaim', 'webp_delete', 'purge_webp'].includes(mode);
+  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined, webp_delete: pixora.modeStrict, purge_webp: pixora.modePurge, preview_webp_cleanup: pixora.modePreview }[mode];
   if (reclaim && !document.getElementById(purge ? 'pixora-webp-consent' : 'pixora-cleanup-consent')?.checked) {
    progress.textContent = pixora.consent;
    return;

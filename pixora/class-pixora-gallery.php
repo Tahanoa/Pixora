@@ -2,6 +2,22 @@
 /** Media gallery and duplicate discovery. Discovery never deletes or rewrites media. */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 final class Pixora_Gallery {
+ public static function animated( $file ) {
+  $handle = @fopen( $file, 'rb' );
+  if ( ! $handle ) { return true; }
+  try {
+   if ( "\x89PNG\r\n\x1a\n" !== fread( $handle, 8 ) ) { return true; }
+   while ( ! feof( $handle ) ) {
+    $header = fread( $handle, 8 );
+    if ( 8 !== strlen( $header ) ) { return true; }
+    $chunk = unpack( 'Nlength/a4type', $header );
+    if ( 'acTL' === $chunk['type'] ) { return true; }
+    if ( 'IDAT' === $chunk['type'] ) { return false; }
+    if ( 'IEND' === $chunk['type'] || 0 !== fseek( $handle, $chunk['length'] + 4, SEEK_CUR ) ) { return true; }
+   }
+  } finally { fclose( $handle ); }
+  return true;
+ }
  const META = '_pixora_fingerprint';
  const VERSION = 1;
  public static function init() {
@@ -29,7 +45,7 @@ final class Pixora_Gallery {
   $limit = ini_get( 'memory_limit' );
   $needed = $size ? (float) $size[0] * $size[1] * 10 + 16 * MB_IN_BYTES : PHP_INT_MAX;
   $can_decode = function_exists( 'imagecreatefromstring' ) && $size && in_array( $mime, array( 'image/jpeg', 'image/png', 'image/webp' ), true ) && filesize( $file ) <= 32 * MB_IN_BYTES && ( '-1' === $limit || $needed < wp_convert_hr_to_bytes( $limit ) - memory_get_usage( true ) );
-  if ( 'image/png' === $mime && Pixora_Inplace::animated( $file ) ) { $can_decode = false; $data['note'] = 'PNG متحرک: فقط تطابق فایل بررسی شد.'; }
+  if ( 'image/png' === $mime && self::animated( $file ) ) { $can_decode = false; $data['note'] = 'PNG متحرک: فقط تطابق فایل بررسی شد.'; }
   if ( 'image/webp' === $mime ) { $header = file_get_contents( $file, false, null, 0, 21 ); if ( is_string( $header ) && strlen( $header ) >= 21 && 'VP8X' === substr( $header, 12, 4 ) && ( ord( $header[20] ) & 2 ) ) { $can_decode = false; $data['note'] = 'WebP متحرک: فقط تطابق فایل بررسی شد.'; } }
   if ( 'image/jpeg' === $mime && function_exists( 'exif_read_data' ) ) {
    $exif = @exif_read_data( $file );

@@ -88,7 +88,23 @@ try{
  $block=function(){return new WP_Error('probe_test','Blocked test HTTP');};add_filter('pre_http_request',$block);
  $strict=Pixora_Diagnostics::run($unselected,'webp_delete');remove_filter('pre_http_request',$block);
  cleanup_check(is_wp_error($strict)&&get_post_mime_type($unselected)==='image/jpeg'&&file_exists($unselected_original),'Strict WebP-and-delete action preserves original on failed routing');
- $actions=Pixora_Bulk::actions(array());cleanup_check(isset($actions['pixora_webp'],$actions['pixora_webp_delete'],$actions['pixora_smart'],$actions['pixora_remove_webp']),'Media list exposes conversion, strict deletion, smart and copy-cleanup bulk actions');
+ $before_hash=hash_file('sha256',$unselected_original);
+ add_filter('pre_http_request',$block);
+ $combined=Pixora_Diagnostics::run($unselected,'optimize_reclaim');
+ remove_filter('pre_http_request',$block);
+ cleanup_check(is_wp_error($combined)&&hash_file('sha256',$unselected_original)===$before_hash,'Combined action never replaces JPEG after failed routing');
+ $old_options=get_option(Pixora::OPTION,array());
+ update_option(Pixora::OPTION,array('engine'=>'inplace','automatic'=>1,'inplace_consent'=>1));
+ cleanup_check(!Pixora::options()['automatic'],'Legacy same-format preference does not silently enable WebP uploads');
+ update_option(Pixora::OPTION,array('automatic'=>1,'auto_cleanup'=>1));
+ add_filter('pre_http_request',$block);
+ $upload_metadata=wp_get_attachment_metadata($unselected);
+ $upload_result=Pixora::on_upload($upload_metadata,$unselected);
+ remove_filter('pre_http_request',$block);
+ cleanup_check($upload_result===$upload_metadata&&hash_file('sha256',$unselected_original)===$before_hash,'Upload with failed WebP preflight leaves JPEG unchanged');
+ update_option(Pixora::OPTION,$old_options);
+ cleanup_check(is_wp_error(Pixora_Diagnostics::run($unselected,'inplace')),'Removed engine cannot be invoked through diagnostics');
+ $actions=Pixora_Bulk::actions(array());cleanup_check(isset($actions['pixora_webp'],$actions['pixora_webp_delete'],$actions['pixora_remove_webp']),'Media list exposes conversion, strict deletion and copy-cleanup bulk actions');
  echo 'Real WebP cleanup and selected-media tests complete; WordPress '.get_bloginfo('version')."\n";
 }finally{
  wp_set_current_user(1);foreach($posts as$id)wp_delete_post($id,true);foreach($extra as$file)if(is_file($file))unlink($file);foreach($ids as$id)wp_delete_attachment($id,true);

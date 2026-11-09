@@ -3,7 +3,7 @@
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 final class Pixora_Bulk {
  public static function modes() {
-  return array( 'pixora_webp' => array( 'optimize', 'Pixora: تبدیل به WebP با حفظ اصل' ), 'pixora_webp_delete' => array( 'webp_delete', 'Pixora: تبدیل به WebP و حذف اصل پس از تأیید آدرس' ), 'pixora_smart' => array( 'optimize_reclaim', 'Pixora: کاهش حجم و آزادسازی هوشمند' ), 'pixora_remove_webp' => array( 'purge_webp', 'Pixora: حذف کپی‌های WebP قبلی' ) );
+  return array( 'pixora_webp' => array( 'optimize', 'Pixora: تبدیل به WebP با حفظ اصل' ), 'pixora_webp_delete' => array( 'webp_delete', 'Pixora: تبدیل به WebP و حذف اصل پس از تأیید آدرس' ), 'pixora_remove_webp' => array( 'purge_webp', 'Pixora: حذف کپی‌های WebP قبلی' ) );
  }
  public static function init() {
   add_filter( 'bulk_actions-upload', array( __CLASS__, 'actions' ) );

@@ -4,14 +4,14 @@ Tags: webp, images, optimization, media
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.7.0
+Stable tag: 0.7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Persian image optimization and optional verified disk reclamation, with one-step and background workflows.
 
 == Description ==
-Pixora 0.5.0 adds a same-format disk optimizer. Smaller JPEG/PNG files atomically replace their predecessors without creating extra WebP copies, changing URLs, or requiring rewrite rules. An independent backup and explicit consent are required because previous quality cannot be restored in-plugin. WebP remains a separate optional workflow. Previously published WebP files remain intact.
+Pixora converts JPEG/PNG to WebP. Same-format compression and automatic fallback have been removed. Original deletion requires verified WebP delivery; failed verification preserves originals.
 
 Convert JPEG and PNG uploads to WebP, preserve transparency, choose quality presets, process existing images, and optionally reclaim originals after verifying all legacy URLs. A standalone Persian RTL dashboard, per-image media controls, separate payload/disk savings, resumable batches, and support-report copying are included.
 
@@ -36,6 +36,8 @@ Only from your independent backup. In-plugin restoration is available before ori
 Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.7.1 =
+Remove same-format engine, upload options, media controls and automatic fallback. Keep WebP-only conversion and verified original deletion. Disable legacy same-format automatic upload preferences until explicitly re-enabled for WebP.
 = 0.7.0 =
 Add preview and consent-based deletion of tracked Pixora WebP copies when verified JPEG/PNG originals remain. Restore attachment pointers before deletion; preserve known references and retry failed deletions. Keep restored-copy history. Add four native Media Library list-view bulk actions with owner-scoped, selected-only resumable jobs and strict WebP/original deletion mode. Untracked copies and original WebP uploads are excluded; external references cannot be exhaustively detected.
 = 0.6.1 =
