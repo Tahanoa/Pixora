@@ -29,6 +29,7 @@ function absint($v) { return abs((int)$v); }
 function get_post_meta($id, $k, $single) { return $GLOBALS['meta'][$k] ?? ''; }
 function add_post_meta($id, $k, $v, $unique) { if (isset($GLOBALS['meta'][$k])) return false; $GLOBALS['meta'][$k] = $v; return true; }
 function delete_post_meta($id, $k) { unset($GLOBALS['meta'][$k]); }
+if (!function_exists('update_post_meta')) { function update_post_meta($id,$key,$value) { if (!empty($GLOBALS['fail_meta'])) return false; $GLOBALS['meta'][$key]=$value; return true; } }
 function get_post_mime_type($id) { return $GLOBALS['mime']; }
 function wp_image_editor_supports($args) { return true; }
 function wp_get_upload_dir() { return array('basedir' => $GLOBALS['uploads'], 'baseurl' => 'https://example.test/uploads'); }

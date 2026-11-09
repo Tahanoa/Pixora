@@ -4,7 +4,7 @@ Tags: webp, images, optimization, media
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.1
+Stable tag: 0.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,6 +36,8 @@ Only from your independent backup. In-plugin restoration is available before ori
 Conversion runs during upload; optional cleanup runs via WordPress Cron after URL verification. It may wait for site traffic or a configured cron runner.
 
 == Changelog ==
+= 0.7.0 =
+Add preview and consent-based deletion of tracked Pixora WebP copies when verified JPEG/PNG originals remain. Restore attachment pointers before deletion; preserve known references and retry failed deletions. Keep restored-copy history. Add four native Media Library list-view bulk actions with owner-scoped, selected-only resumable jobs and strict WebP/original deletion mode. Untracked copies and original WebP uploads are excluded; external references cannot be exhaustively detected.
 = 0.6.1 =
 Automatically fall back from failed WebP reclamation to smaller same-format replacement. Apply the fallback to cleanup buttons, combined batches and opted-in automatic uploads. Report measured net image-byte savings, including newly created WebP cost; never claim success for zero gain.
 = 0.6.0 =

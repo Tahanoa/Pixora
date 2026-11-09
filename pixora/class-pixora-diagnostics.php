@@ -39,6 +39,9 @@ final class Pixora_Diagnostics {
  public static function run( $id, $mode ) {
   self::begin( $id, $mode );
   try {
+   if ( 'preview_webp_cleanup' === $mode ) { return Pixora_Webp_Cleanup::plan( $id ); }
+   if ( 'purge_webp' === $mode ) { return Pixora_Webp_Cleanup::purge( $id ); }
+   if ( 'webp_delete' === $mode ) { return Pixora_Workflow::strict( $id ); }
    if ( 'inplace' === $mode ) { return Pixora_Inplace::optimize( $id ); }
    if ( 'optimize_reclaim' === $mode ) { return Pixora_Workflow::combined( $id ); }
    if ( 'reclaim' === $mode ) { return Pixora_Workflow::reclaim( $id ); }

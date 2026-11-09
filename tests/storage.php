@@ -104,7 +104,7 @@ try {
  $GLOBALS['wpdb'] = new FakeBatchDB();
  $_POST = array('mode' => 'reclaim', 'consent' => 'delete-originals');
  try { Pixora::batch(); } catch (JsonResponse $r) { check($r->ok && $r->data['done'], 'Cleanup finishes immediately when no optimized attachments exist'); }
- check(strpos($GLOBALS['wpdb']->query, 'AND EXISTS') !== false && strpos($GLOBALS['wpdb']->query, 'pm.post_id = p.ID') !== false, 'Cleanup query requires Pixora backup metadata');
+ check(strpos($GLOBALS['wpdb']->query, 'AND EXISTS') !== false && preg_match('/pm\.post_id\s*=\s*p\.ID/', $GLOBALS['wpdb']->query) === 1, 'Cleanup query requires Pixora backup metadata');
  $GLOBALS['wpdb']->ids = array(1);
  try { Pixora::batch(); } catch (JsonResponse $r) { check($r->ok && !empty($r->data['scanning']), 'Previously reclaimed attachments are silently skipped'); }
  $_POST = array('mode' => 'optimize'); $GLOBALS['wpdb']->ids = array();

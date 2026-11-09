@@ -23,9 +23,10 @@ final class Pixora_Workflow {
  }
  public static function reclaim( $id ) { return self::measure( $id, true ); }
  public static function combined( $id ) { return self::measure( $id, false ); }
- private static function measure( $id, $existing_only ) {
+ public static function strict( $id ) { return self::measure( $id, false, true ); }
+ private static function measure( $id, $existing_only, $strict = false ) {
   $before = Pixora_Gallery::files( $id );
-  $result = $existing_only ? self::reclaim_internal( $id ) : self::combined_internal( $id );
+  $result = $existing_only ? self::reclaim_internal( $id ) : self::combined_internal( $id, $strict );
   if ( is_wp_error( $result ) ) { return $result; }
   $after = Pixora_Gallery::files( $id );
   $net = $before['bytes'] - $after['bytes'];
@@ -49,16 +50,17 @@ final class Pixora_Workflow {
   }
   return $cleaned;
  }
- private static function combined_internal( $id ) {
+ private static function combined_internal( $id, $strict = false ) {
   $backup = get_post_meta( $id, Pixora::BACKUP, true );
   if ( ! $backup ) {
    $check = Pixora_Storage::preflight( get_attached_file( $id ) );
-   if ( self::can_fallback( $check ) ) { return self::fallback( $id, $check ); }
+   if ( ! $strict && self::can_fallback( $check ) ) { return self::fallback( $id, $check ); }
    if ( is_wp_error( $check ) ) { return $check; }
    $optimized = Pixora::optimize( $id );
-   if ( self::can_fallback( $optimized ) ) { return self::fallback( $id, $optimized ); }
+   if ( ! $strict && self::can_fallback( $optimized ) ) { return self::fallback( $id, $optimized ); }
    if ( is_wp_error( $optimized ) ) { return $optimized; }
   }
+  if ( $strict ) { $result = Pixora_Storage::reclaim( $id ); if ( ! is_wp_error( $result ) ) { $result['method'] = 'webp'; } return $result; }
   return self::reclaim_internal( $id );
  }
  public static function should_pause( $result ) {

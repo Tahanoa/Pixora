@@ -117,6 +117,8 @@ final class Pixora_Gallery {
    foreach ( $backup['metadata']['sizes'] ?? array() as $size ) { $paths[] = dirname( $backup['file'] ) . '/' . $size['file']; }
    if ( ! empty( $backup['metadata']['original_image'] ) ) { $paths[] = dirname( $backup['file'] ) . '/' . $backup['metadata']['original_image']; }
   }
+  $copies = get_post_meta( $id, Pixora_Webp_Cleanup::COPIES, true );
+  if ( is_array( $copies ) ) { $paths = array_merge( $paths, $copies ); }
   $count = 0; $bytes = 0;
   foreach ( array_unique( $paths ) as $path ) { if ( Pixora::safe_file( $path ) ) { ++$count; $bytes += filesize( $path ); } }
   return array( 'count' => $count, 'bytes' => $bytes );

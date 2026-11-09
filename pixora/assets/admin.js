@@ -22,7 +22,10 @@
   const quality = document.getElementById('pixora-quality');
   if (quality) { quality.value = button.dataset.pixoraQuality; quality.focus(); }
  }));
- const jobKey = mode => `pixora:${pixora.url}:${mode}`;
+ const selectionInput = document.getElementById('pixora-selection');
+ const selection = selectionInput?.value || '';
+ const selectedMode = selectionInput?.dataset.mode || '';
+ const jobKey = mode => `pixora:${pixora.url}:${mode}:${selection || 'all'}`;
  const jobs = {};
  function readJob(mode) {
   try { return jobs[mode] || JSON.parse(sessionStorage.getItem(jobKey(mode)) || 'null'); } catch { return jobs[mode] || null; }
@@ -62,6 +65,7 @@
   }
  });
  const buttons = document.querySelectorAll('[data-pixora]');
+ buttons.forEach(button => { if (selectedMode && button.dataset.pixora !== selectedMode && !(selectedMode === 'purge_webp' && button.dataset.pixora === 'preview_webp_cleanup')) { button.disabled = true; button.dataset.pixoraUnavailable = 'true'; } });
  const stop = document.getElementById('pixora-stop');
  const progress = document.getElementById('pixora-progress');
  const log = document.getElementById('pixora-log');
@@ -74,38 +78,40 @@
   catch { copy.textContent = pixora.copyFailed; }
  });
  reset?.addEventListener('click', () => {
-  ['optimize', 'restore', 'reclaim', 'optimize_reclaim', 'inplace'].forEach(mode => saveJob(mode, null));
+  ['optimize', 'restore', 'reclaim', 'optimize_reclaim', 'inplace', 'webp_delete', 'preview_webp_cleanup', 'purge_webp'].forEach(mode => saveJob(mode, null));
   progress.textContent = 'پیشرفت ذخیره‌شده پاک شد؛ عملیات بعدی از ابتدا شروع می‌شود.';
  });
  stop.addEventListener('click', () => { stopped = true; stop.disabled = true; });
  buttons.forEach(button => button.addEventListener('click', async () => {
   const mode = button.dataset.pixora;
-  const reclaim = ['reclaim', 'optimize_reclaim', 'inplace'].includes(mode);
-  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined, inplace: pixora.modeInplace }[mode];
-  if (reclaim && !document.getElementById('pixora-cleanup-consent')?.checked) {
+  const preview = mode === 'preview_webp_cleanup';
+  const purge = mode === 'purge_webp';
+  const reclaim = ['reclaim', 'optimize_reclaim', 'inplace', 'webp_delete', 'purge_webp'].includes(mode);
+  const modeLabel = { optimize: pixora.modeOptimize, restore: pixora.modeRestore, reclaim: pixora.modeReclaim, optimize_reclaim: pixora.modeCombined, inplace: pixora.modeInplace, webp_delete: pixora.modeStrict, purge_webp: pixora.modePurge, preview_webp_cleanup: pixora.modePreview }[mode];
+  if (reclaim && !document.getElementById(purge ? 'pixora-webp-consent' : 'pixora-cleanup-consent')?.checked) {
    progress.textContent = pixora.consent;
    return;
   }
   stopped = false;
   buttons.forEach(item => { item.disabled = true; });
   stop.disabled = false;
-  let { cursor = 0, processed = 0, skipped = 0, saved = 0, freed = 0, remaining = 0, failed = 0, partial = 0 } = readJob(mode) || {};
+  let { cursor = 0, processed = 0, skipped = 0, saved = 0, freed = 0, remaining = 0, failed = 0, partial = 0, potential = 0, deleted = 0 } = readJob(mode) || {};
   if (reset) reset.disabled = true;
   log.textContent = '';
   progress.textContent = `${modeLabel} — ${cursor ? pixora.resume : pixora.working}`;
   try {
    while (!stopped) {
-    const body = new URLSearchParams({ action: 'pixora_batch', nonce: pixora.nonce, mode: button.dataset.pixora, cursor: String(cursor), consent: reclaim ? 'delete-originals' : '' });
+    const body = new URLSearchParams({ action: 'pixora_batch', nonce: pixora.nonce, mode: button.dataset.pixora, cursor: String(cursor), consent: purge ? 'delete-pixora-webp' : reclaim ? 'delete-originals' : '', selection });
     const result = await request(body);
     if (result.done) { saveJob(mode, null); progress.textContent += ` — ${pixora.finished}`; break; }
     if (result.halt) {
-     saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial });
+     saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial, potential, deleted });
      progress.textContent = `${modeLabel} — پردازش به علت مشکل بررسی مسیر متوقف شد؛ پس از رفع مشکل، همین دکمه را بزنید.`;
      log.textContent = (`#${result.cursor}: ${result.message}\nادامهٔ بررسی سایر تصاویر متوقف شد.\n` + log.textContent).slice(0, 20000);
      break;
     }
     cursor = result.cursor;
-    if (result.scanning) { saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial }); continue; }
+    if (result.scanning) { saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial, potential, deleted }); continue; }
     if (result.status === 'processed') processed++;
     else if (result.status === 'failed') failed++;
     else if (result.status === 'partial') partial++;
@@ -113,8 +119,9 @@
     saved += result.saved;
     freed += result.freed || 0;
     remaining += result.remaining || 0;
-    saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial });
-    progress.textContent = `${modeLabel} | ${pixora.processed}: ${processed.toLocaleString('fa-IR')} | ${pixora.skipped}: ${skipped.toLocaleString('fa-IR')} | ${pixora.failedCount}: ${failed.toLocaleString('fa-IR')} | ${pixora.partialCount}: ${partial.toLocaleString('fa-IR')} | ${((reclaim ? freed : saved) / 1048576).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ${reclaim ? pixora.freed : pixora.saved}${reclaim && remaining ? ` | ${pixora.remaining}: ${remaining.toLocaleString('fa-IR')}` : ''}`;
+    potential += result.potential || 0; deleted += result.deleted || 0;
+    saveJob(mode, { cursor, processed, skipped, saved, freed, remaining, failed, partial, potential, deleted });
+    progress.textContent = `${modeLabel} | ${pixora.processed}: ${processed.toLocaleString('fa-IR')} | ${pixora.skipped}: ${skipped.toLocaleString('fa-IR')} | ${pixora.failedCount}: ${failed.toLocaleString('fa-IR')} | ${pixora.partialCount}: ${partial.toLocaleString('fa-IR')} | ${((preview ? potential : reclaim ? freed : saved) / 1048576).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ${preview ? 'مگابایت قابل آزادسازی در بررسی اولیه؛ هنوز حذف نشده' : reclaim ? pixora.freed : pixora.saved}${purge ? ` | کپی حذف‌شده: ${deleted.toLocaleString('fa-IR')}` : ''}${reclaim && remaining ? ` | ${pixora.remaining}: ${remaining.toLocaleString('fa-IR')}` : ''}`;
     log.textContent = (`#${cursor}: ${result.message}\n` + log.textContent).slice(0, 20000);
    }
    if (stopped) progress.textContent += ` — ${pixora.stopped}`;
